@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+.netlify/
+bun.lock*
+yarn.lock
+pnpm-lock.yaml
+
