@@ -47,6 +47,38 @@ class ApiService {
   constructor() {
     this.events = this.loadFromStorage(STORAGE_KEYS.EVENTS, INITIAL_EVENTS);
     this.registrations = this.loadFromStorage(STORAGE_KEYS.REGISTRATIONS, INITIAL_REGISTRATIONS);
+    // Ensure all registrations have organizerAllowedLeave, leaveUniqueKey, and leaveFormUnlocked
+    let regsUpdated = false;
+    this.registrations = this.registrations.map(r => {
+      let changed = false;
+      let allowed = r.organizerAllowedLeave;
+      let key = r.leaveUniqueKey;
+      let unlocked = r.leaveFormUnlocked;
+
+      if (allowed === undefined) {
+        allowed = r.id === 'reg-501';
+        changed = true;
+      }
+      if (!key) {
+        key = `KEY-GLA-${r.registrationCode ? r.registrationCode.replace(/[^a-zA-Z0-9]/g, '').slice(-4) : '8921'}-${r.id.slice(-3).toUpperCase()}`;
+        changed = true;
+      }
+      if (unlocked === undefined) {
+        unlocked = false;
+        changed = true;
+      }
+      if (changed) {
+        regsUpdated = true;
+        return {
+          ...r,
+          organizerAllowedLeave: allowed,
+          leaveUniqueKey: key,
+          leaveFormUnlocked: unlocked
+        };
+      }
+      return r;
+    });
+
     this.users = this.loadFromStorage(STORAGE_KEYS.USERS, INITIAL_USERS);
     // Ensure all existing cached user profiles are migrated to GLA UNIVERSITY MATHURA
     let usersUpdated = false;
@@ -57,7 +89,7 @@ class ApiService {
       }
       return u;
     });
-    if (usersUpdated) {
+    if (usersUpdated || regsUpdated) {
       this.saveToStorage();
     }
     this.announcements = this.loadFromStorage(STORAGE_KEYS.ANNOUNCEMENTS, INITIAL_ANNOUNCEMENTS);
@@ -399,6 +431,8 @@ class ApiService {
     const randomChar = String.fromCharCode(65 + Math.floor(Math.random() * 26));
     const uniqueRegistrationCode = `CG-REG-${randomNum}-${randomChar}`;
 
+    const uniqueLeaveKey = `KEY-GLA-${randomNum}-${randomChar}`;
+
     const newReg: EventRegistration = {
       id: `reg-${Date.now()}`,
       eventId,
@@ -406,7 +440,10 @@ class ApiService {
       registeredAt: new Date().toISOString(),
       status: 'confirmed',
       registrationCode: uniqueRegistrationCode,
-      attendanceStatus: 'pending', // Attendance MUST be marked via QR code during/after event to unlock leave form!
+      attendanceStatus: 'pending',
+      organizerAllowedLeave: false, // Requires organizer allowance
+      leaveUniqueKey: uniqueLeaveKey,
+      leaveFormUnlocked: false, // Requires entering the unique key
       officialFormDownloaded: false,
       personalApplicationDownloaded: false
     };
@@ -580,15 +617,19 @@ class ApiService {
     }
 
     const attendance = studentData.attendanceStatus || 'pending';
+    const regNum = Math.floor(1000 + Math.random() * 9000);
     const newReg: EventRegistration = {
       id: `reg-${Date.now()}`,
       eventId,
       studentId: student.id,
       registeredAt: new Date().toISOString(),
       status: 'confirmed',
-      registrationCode: `GLA-HK-${Math.floor(1000 + Math.random() * 9000)}`,
+      registrationCode: `GLA-HK-${regNum}`,
       attendanceStatus: attendance,
       attendanceMarkedAt: attendance === 'present' ? new Date().toISOString() : undefined,
+      organizerAllowedLeave: false,
+      leaveUniqueKey: `KEY-GLA-${regNum}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+      leaveFormUnlocked: false,
       officialFormDownloaded: false,
       personalApplicationDownloaded: false,
       teamName: studentData.teamName?.trim() || 'Solo Participant',
@@ -660,6 +701,171 @@ class ApiService {
     this.registrations = this.registrations.filter(r => r.id !== registrationId);
     this.saveToStorage();
     return true;
+  }
+
+  // --- LEAVE FORM ALLOWANCE & UNIQUE KEY WORKFLOW ---
+
+  /**
+   * Organizer allows leave form generation for a student participant,
+   * activating/generating a unique clearance key.
+   */
+  public allowStudentLeave(
+    organizerId: string,
+    registrationId: string,
+    customKey?: string
+  ): { success: boolean; message: string; registration: EventRegistration; uniqueKey: string } {
+    const reg = this.registrations.find(r => r.id === registrationId);
+    if (!reg) throw new Error('Registration not found');
+
+    const event = this.events.find(e => e.id === reg.eventId);
+    const key = customKey?.trim() || reg.leaveUniqueKey || `KEY-GLA-${reg.registrationCode ? reg.registrationCode.replace(/[^a-zA-Z0-9]/g, '').slice(-4) : '8921'}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+    reg.organizerAllowedLeave = true;
+    reg.organizerAllowedAt = new Date().toISOString();
+    reg.leaveUniqueKey = key;
+
+    // Send notification to the student
+    const student = this.users.find(u => u.id === reg.studentId);
+    if (student) {
+      this.notifications.unshift({
+        id: `notif-${Date.now()}`,
+        userId: student.id,
+        roleTarget: 'student',
+        title: `Leave Form Authorized: ${event?.title || 'Event'}`,
+        message: `Organizer has authorized your leave form! Your unique unlock key is: ${key}. Paste this key into your Leave Forms portal to unlock and generate.`,
+        createdAt: new Date().toISOString(),
+        read: false,
+        type: 'leave_form'
+      });
+    }
+
+    this.saveToStorage();
+
+    return {
+      success: true,
+      message: `Leave form authorized for ${student?.name || 'student'}. Unique Key: ${key}`,
+      registration: reg,
+      uniqueKey: key
+    };
+  }
+
+  /**
+   * Organizer revokes leave form generation allowance
+   */
+  public revokeStudentLeave(
+    _organizerId: string,
+    registrationId: string
+  ): { success: boolean; message: string; registration: EventRegistration } {
+    const reg = this.registrations.find(r => r.id === registrationId);
+    if (!reg) throw new Error('Registration not found');
+
+    reg.organizerAllowedLeave = false;
+    reg.leaveFormUnlocked = false; // Re-lock form
+    this.saveToStorage();
+
+    return {
+      success: true,
+      message: 'Leave authorization revoked. Leave form is now locked.',
+      registration: reg
+    };
+  }
+
+  /**
+   * Bulk allow all present students for an event
+   */
+  public allowAllPresentStudents(
+    _organizerId: string,
+    eventId: string
+  ): { success: boolean; allowedCount: number; message: string } {
+    const regs = this.registrations.filter(r => r.eventId === eventId && r.status === 'confirmed');
+    let count = 0;
+    regs.forEach(reg => {
+      if (!reg.organizerAllowedLeave) {
+        const key = reg.leaveUniqueKey || `KEY-GLA-${reg.registrationCode ? reg.registrationCode.replace(/[^a-zA-Z0-9]/g, '').slice(-4) : '8921'}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+        reg.organizerAllowedLeave = true;
+        reg.organizerAllowedAt = new Date().toISOString();
+        reg.leaveUniqueKey = key;
+        count++;
+
+        const student = this.users.find(u => u.id === reg.studentId);
+        if (student) {
+          this.notifications.unshift({
+            id: `notif-${Date.now()}-${count}`,
+            userId: student.id,
+            roleTarget: 'student',
+            title: `Leave Form Authorized`,
+            message: `Organizer authorized your leave form generation! Your unique unlock key is: ${key}. Paste it in your Leave Forms portal to unlock.`,
+            createdAt: new Date().toISOString(),
+            read: false,
+            type: 'leave_form'
+          });
+        }
+      }
+    });
+    this.saveToStorage();
+    return {
+      success: true,
+      allowedCount: count,
+      message: `Successfully authorized leave form generation for ${count} participant(s). Unique keys issued.`
+    };
+  }
+
+  /**
+   * Student pastes and submits their unique key to unlock their leave form
+   */
+  public unlockStudentLeaveWithKey(
+    studentId: string,
+    eventId: string,
+    enteredKey: string
+  ): { success: boolean; message: string; registration?: EventRegistration } {
+    const reg = this.registrations.find(
+      r => r.eventId === eventId && r.studentId === studentId && r.status === 'confirmed'
+    );
+
+    if (!reg) {
+      return {
+        success: false,
+        message: 'No active event registration found for this student.'
+      };
+    }
+
+    if (!reg.organizerAllowedLeave) {
+      return {
+        success: false,
+        message: 'Leave form generation is not yet allowed by the organizer. The organizer must authorize your request and issue your unique clearance key first.'
+      };
+    }
+
+    if (reg.leaveFormUnlocked) {
+      return {
+        success: true,
+        message: 'Leave form is already unlocked and generated!',
+        registration: reg
+      };
+    }
+
+    const cleanEntered = enteredKey.trim().toUpperCase();
+    const cleanKey = reg.leaveUniqueKey?.trim().toUpperCase() || '';
+    const cleanRegCode = reg.registrationCode.trim().toUpperCase();
+
+    // Verify unique key (also allow registration code as secondary fallback)
+    if (cleanEntered !== cleanKey && cleanEntered !== cleanRegCode) {
+      return {
+        success: false,
+        message: `Invalid unique key "${enteredKey.trim()}". Please enter the exact key authorized by your event organizer.`
+      };
+    }
+
+    // Success: Unlock the leave form!
+    reg.leaveFormUnlocked = true;
+    reg.leaveFormUnlockedAt = new Date().toISOString();
+    this.saveToStorage();
+
+    return {
+      success: true,
+      message: 'Unique key verified successfully! Your Official Leave Form and HOD Application Letter are now generated and unlocked.',
+      registration: reg
+    };
   }
 
   // --- REQUIREMENT 1: ORGANIZER LEAVE FORM MANAGEMENT ---
@@ -965,7 +1171,8 @@ class ApiService {
     const myRegs = this.registrations.filter(r => r.studentId === studentId && r.status === 'confirmed');
     const myEvents = myRegs.map(r => this.events.find(e => e.id === r.eventId)).filter(Boolean) as CampusEvent[];
     const upcomingEvents = this.events.filter(e => new Date(e.startDate) > new Date()).slice(0, 5);
-    const verifiedLeaves = myRegs.filter(r => r.attendanceStatus === 'present').length;
+    const verifiedLeaves = myRegs.filter(r => r.leaveFormUnlocked).length;
+    const allowedLeaves = myRegs.filter(r => r.organizerAllowedLeave && !r.leaveFormUnlocked).length;
     const unreadNotifications = this.getNotifications(studentId, 'student').filter(n => !n.read).length;
 
     return {
@@ -973,6 +1180,7 @@ class ApiService {
       myEvents,
       upcomingEvents,
       verifiedLeaves,
+      allowedLeaves,
       unreadNotifications
     };
   }

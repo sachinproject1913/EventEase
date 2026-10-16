@@ -72,8 +72,13 @@ export interface EventRegistration {
   registeredAt: string;
   status: 'confirmed' | 'waitlisted' | 'cancelled';
   registrationCode: string; // Unique ID given to student at registration (e.g. REG-8941)
-  attendanceStatus: AttendanceStatus; // Must be 'present' to unlock leave form!
+  attendanceStatus: AttendanceStatus;
   attendanceMarkedAt?: string;
+  organizerAllowedLeave?: boolean; // Organizer has approved/allowed leave generation
+  organizerAllowedAt?: string;
+  leaveUniqueKey?: string; // Unique key issued by organizer (e.g. KEY-GLA-8921-X)
+  leaveFormUnlocked?: boolean; // True after student pastes & verifies the unique key inside the form
+  leaveFormUnlockedAt?: string;
   officialFormDownloaded: boolean;
   officialFormDownloadedAt?: string;
   personalApplicationDownloaded: boolean;

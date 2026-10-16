@@ -161,19 +161,19 @@ export const Navbar: React.FC<Props> = ({
                       id="persona-select"
                       value={currentUser.id}
                       onChange={(e) => onSwitchUser(e.target.value)}
-                      className="text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 py-1 pl-2 pr-5 rounded-lg border border-slate-200 cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-blue-500 appearance-none shadow-2xs"
+                      className="text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 py-1 pl-2 pr-6 rounded-lg border border-slate-200 cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-blue-500 appearance-none shadow-2xs w-[95px] sm:w-[125px] md:w-[135px] truncate"
                       title="Switch Persona"
                     >
                       <optgroup label="Student Panel (Download Only)">
-                        <option value="stu-101">Aarav Sharma (Student - Complete)</option>
-                        <option value="stu-102">Sneha Patel (Student - Incomplete Profile)</option>
+                        <option value="stu-101">Aarav (Student)</option>
+                        <option value="stu-102">Sneha (Incomplete)</option>
                       </optgroup>
                       <optgroup label="Organizer Panel (Upload & Manage)">
-                        <option value="org-201">Dr. Vikram Malhotra (CAS Organizer)</option>
-                        <option value="org-202">Prof. Priya Nair (Career Organizer)</option>
+                        <option value="org-201">Dr. Vikram (CAS Org)</option>
+                        <option value="org-202">Prof. Priya (Career)</option>
                       </optgroup>
                       <optgroup label="Admin Panel (Governance & Audits)">
-                        <option value="adm-001">Dean Robert Sterling (Dean / Admin)</option>
+                        <option value="adm-001">Dean Sterling (Admin)</option>
                       </optgroup>
                     </select>
                     <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />

@@ -91,7 +91,7 @@ export const StudentPanel: React.FC<Props> = ({
       key: 'leave-forms', 
       label: 'Leave Form Sent By Organizer', 
       icon: <FileDown className="w-3.5 h-3.5 shrink-0" />,
-      badge: stats.verifiedLeaves > 0 ? `${stats.verifiedLeaves} Ready` : undefined
+      badge: stats.verifiedLeaves > 0 ? `${stats.verifiedLeaves} Unlocked` : (stats.allowedLeaves && stats.allowedLeaves > 0 ? `${stats.allowedLeaves} Key Ready` : undefined)
     },
     { 
       key: 'permission-forms', 
@@ -402,10 +402,20 @@ export const StudentPanel: React.FC<Props> = ({
 
                     <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs gap-2">
                       <div className="min-w-0">
-                        {isPresent ? (
+                        {registration.leaveFormUnlocked ? (
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 truncate">
                             <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                            <span>Present &bull; Leave Unlocked</span>
+                            <span>Leave Unlocked & Generated</span>
+                          </span>
+                        ) : registration.organizerAllowedLeave ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 truncate">
+                            <CheckCircle2 className="w-3 h-3 text-indigo-600 shrink-0" />
+                            <span>Organizer Allowed &bull; Key Required</span>
+                          </span>
+                        ) : isPresent ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 truncate">
+                            <Clock className="w-3 h-3 text-slate-500 shrink-0" />
+                            <span>Awaiting Organizer Allowance</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 truncate">
@@ -415,8 +425,8 @@ export const StudentPanel: React.FC<Props> = ({
                         )}
                       </div>
 
-                      <div className="shrink-0">
-                        {!isPresent ? (
+                      <div className="shrink-0 flex items-center gap-1.5">
+                        {!isPresent && (
                           <button
                             onClick={() => setQrModalItem({ event, registration })}
                             className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold text-xs flex items-center gap-1 cursor-pointer"
@@ -424,15 +434,14 @@ export const StudentPanel: React.FC<Props> = ({
                             <QrCode className="w-3.5 h-3.5" />
                             <span>Scan QR Code</span>
                           </button>
-                        ) : (
-                          <button
-                            onClick={() => setActiveSubNav('leave-forms')}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs flex items-center gap-1 cursor-pointer"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                            <span>View Leave Form</span>
-                          </button>
                         )}
+                        <button
+                          onClick={() => setActiveSubNav('leave-forms')}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs flex items-center gap-1 cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>{registration.leaveFormUnlocked ? 'Download Form' : 'Unlock Leave'}</span>
+                        </button>
                       </div>
                     </div>
                   </div>

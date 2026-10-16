@@ -132,11 +132,11 @@ export const RegistrationConfirmModal: React.FC<Props> = ({
             <div className="flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0" />
               <span className="text-xs font-bold text-amber-950 uppercase tracking-wide">
-                Leave Form Unlocks After Verified Event Attendance
+                Leave Form Unlocks via Organizer Clearance & Unique Key
               </span>
             </div>
             <p className="text-xs text-amber-900 leading-relaxed">
-              In accordance with university regulations, your <strong>Official Leave Form</strong> and <strong>HOD Leave Application</strong> are generated <strong>only after you are present at the event</strong>. Scan the venue's QR code during or at the end of the event, enter your unique registration number, and your attendance will be automatically marked <strong>PRESENT</strong>.
+              In accordance with university regulations, your <strong>Official Leave Form</strong> and <strong>HOD Leave Application</strong> are generated after the event organizer approves your participation and issues a <strong>Unique Clearance Key</strong>. Once allowed, paste your unique key inside the Leave Forms portal to unlock and generate your documents.
             </p>
           </div>
 

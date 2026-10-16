@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
+import confetti from 'canvas-confetti';
 import { User, CampusEvent, EventRegistration, LeaveFolderFile } from '../types';
 import { apiService } from '../services/apiService';
 import { 
   formatEventDateRange, 
   checkMissingProfileFields, 
-  downloadPersonalizedLeavePdf,
+  downloadPersonalizedLeavePdf, 
   generateOfficialTemplateSamplePdf 
 } from '../utils/pdfGenerator';
 import { LeaveLetterPreviewModal } from './LeaveLetterPreviewModal';
@@ -24,9 +25,12 @@ import {
   CalendarCheck2, 
   QrCode, 
   Lock, 
+  Unlock,
+  Key,
   Copy, 
   Check, 
   ShieldCheck, 
+  ShieldAlert,
   Sparkles,
   Folder
 } from 'lucide-react';
@@ -50,6 +54,8 @@ export const StudentLeaveForms: React.FC<Props> = ({
   const [qrModalItem, setQrModalItem] = useState<{ event: CampusEvent; registration: EventRegistration } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+  const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
+  const [unlockErrors, setUnlockErrors] = useState<Record<string, string>>({});
 
   const refreshData = () => {
     setRegistrations(apiService.getStudentRegistrations(student.id));
@@ -66,14 +72,60 @@ export const StudentLeaveForms: React.FC<Props> = ({
     setTimeout(() => setCopiedCodeId(null), 2000);
   };
 
+  const handleKeyInputChange = (regId: string, val: string) => {
+    setKeyInputs(prev => ({ ...prev, [regId]: val }));
+    if (unlockErrors[regId]) {
+      setUnlockErrors(prev => ({ ...prev, [regId]: '' }));
+    }
+  };
+
+  const handleQuickPasteKey = (regId: string, key: string) => {
+    setKeyInputs(prev => ({ ...prev, [regId]: key }));
+    setUnlockErrors(prev => ({ ...prev, [regId]: '' }));
+    showToast(`Pasted unique key "${key}" into the form.`);
+  };
+
+  const handleUnlockWithKey = (eventId: string, reg: EventRegistration) => {
+    const inputVal = keyInputs[reg.id] || '';
+    if (!inputVal.trim()) {
+      setUnlockErrors(prev => ({ ...prev, [reg.id]: 'Please enter or paste your unique clearance key.' }));
+      return;
+    }
+
+    const res = apiService.unlockStudentLeaveWithKey(student.id, eventId, inputVal);
+    if (!res.success) {
+      setUnlockErrors(prev => ({ ...prev, [reg.id]: res.message }));
+      showToast(res.message);
+      return;
+    }
+
+    try {
+      confetti({
+        particleCount: 90,
+        spread: 70,
+        origin: { y: 0.6 }
+      });
+    } catch {
+      // ignore
+    }
+
+    showToast(res.message);
+    setUnlockErrors(prev => ({ ...prev, [reg.id]: '' }));
+    refreshData();
+  };
+
   // Check missing academic fields
   const missingFields = checkMissingProfileFields(student);
   const hasIncompleteProfile = missingFields.length > 0;
 
   // Handle downloading the Official Leave Form (uploaded by organizer)
   const handleDownloadOfficialForm = (event: CampusEvent, reg: EventRegistration) => {
-    if (reg.attendanceStatus !== 'present') {
-      showToast('Attendance verification required: Please scan the event QR code to unlock this form.');
+    if (!reg.leaveFormUnlocked) {
+      if (!reg.organizerAllowedLeave) {
+        showToast('Leave form locked: Organizer has not allowed leave generation yet.');
+      } else {
+        showToast('Unique key required: Paste and verify your unique key below to unlock the form.');
+      }
       return;
     }
 
@@ -94,8 +146,12 @@ export const StudentLeaveForms: React.FC<Props> = ({
 
   // Handle downloading the Personalized Leave Application
   const handleDownloadPersonalApplication = (event: CampusEvent, reg: EventRegistration) => {
-    if (reg.attendanceStatus !== 'present') {
-      showToast('Attendance verification required: Please scan the event QR code to unlock your leave letter.');
+    if (!reg.leaveFormUnlocked) {
+      if (!reg.organizerAllowedLeave) {
+        showToast('Leave form locked: Organizer has not allowed leave generation yet.');
+      } else {
+        showToast('Unique key required: Paste and verify your unique key below to unlock your leave letter.');
+      }
       return;
     }
 
@@ -111,7 +167,11 @@ export const StudentLeaveForms: React.FC<Props> = ({
     showToast('Personalized leave application letter downloaded successfully.');
   };
 
-  const handleDownloadFolderDoc = (file: { id: string; fileName: string; title: string; fileDataUrl?: string }, event: CampusEvent) => {
+  const handleDownloadFolderDoc = (file: { id: string; fileName: string; title: string; fileDataUrl?: string }, event: CampusEvent, reg: EventRegistration) => {
+    if (!reg.leaveFormUnlocked) {
+      showToast('Exemption document locked: Organizer clearance & unique key required.');
+      return;
+    }
     apiService.recordFolderFileDownload(file.id);
     if (file.fileDataUrl && file.fileDataUrl.startsWith('data:')) {
       const link = document.createElement('a');
@@ -271,15 +331,21 @@ export const StudentLeaveForms: React.FC<Props> = ({
               } : null);
               const hasOfficialTemplate = (template !== undefined && template.isAvailable === true) || Boolean(effectiveUploadedPdf);
               const isPresent = registration.attendanceStatus === 'present';
+              const isAllowed = Boolean(registration.organizerAllowedLeave);
+              const isUnlocked = Boolean(registration.leaveFormUnlocked);
 
               return (
                 <div 
                   key={registration.id}
                   className={`bg-white rounded-2xl border p-5 shadow-xs transition-all space-y-4 ${
-                    isPresent ? 'border-emerald-300 ring-1 ring-emerald-100' : 'border-slate-200'
+                    isUnlocked 
+                      ? 'border-emerald-300 ring-1 ring-emerald-100' 
+                      : isAllowed 
+                      ? 'border-indigo-300 ring-1 ring-indigo-100' 
+                      : 'border-slate-200'
                   }`}
                 >
-                  {/* Top row: Event Info & Attendance Badge */}
+                  {/* Top row: Event Info & Status Badges */}
                   <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
                     <div className="space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -287,16 +353,34 @@ export const StudentLeaveForms: React.FC<Props> = ({
                           {event.category}
                         </span>
 
-                        {/* Attendance Status Badge */}
-                        {isPresent ? (
+                        {/* Leave Generation Status Badge */}
+                        {isUnlocked ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Present at Event &bull; Leave Form Unlocked</span>
+                            <span>Leave Form Generated & Unlocked</span>
+                          </span>
+                        ) : isAllowed ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300">
+                            <Key className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Organizer Allowed &bull; Key Required</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
                             <Clock className="w-3.5 h-3.5 text-amber-600" />
-                            <span>Attendance Pending &bull; QR Scan Required</span>
+                            <span>Awaiting Organizer Allowance</span>
+                          </span>
+                        )}
+
+                        {/* Event Attendance Badge */}
+                        {isPresent ? (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                            <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                            <span>Present at Venue</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                            <Clock className="w-3 h-3 text-slate-400" />
+                            <span>Attendance Pending</span>
                           </span>
                         )}
 
@@ -351,7 +435,7 @@ export const StudentLeaveForms: React.FC<Props> = ({
                         </div>
                       </div>
 
-                      {!isPresent ? (
+                      {!isPresent && (
                         <button
                           onClick={() => setQrModalItem({ event, registration })}
                           className="ml-auto px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors shrink-0"
@@ -359,43 +443,124 @@ export const StudentLeaveForms: React.FC<Props> = ({
                           <QrCode className="w-3.5 h-3.5" />
                           <span>Scan Event QR</span>
                         </button>
-                      ) : (
-                        <div className="ml-auto flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200">
-                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Verified</span>
-                        </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Lock Warning if Attendance Pending */}
-                  {!isPresent && (
-                    <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900">
-                      <div className="flex items-center gap-2">
-                        <Lock className="w-4 h-4 text-amber-600 shrink-0" />
-                        <span>
-                          <strong>Attendance Required:</strong> Scan the event QR code at the venue and submit your unique registration code (<strong className="font-mono">{registration.registrationCode}</strong>) to mark presence and unlock your leave forms.
+                  {/* WORKFLOW SECTION: Organizer Allowance & Unique Key Verification */}
+                  {!isUnlocked ? (
+                    isAllowed ? (
+                      /* STATE 2: Organizer has allowed leave generation -> Student pastes unique key to unlock */
+                      <div className="p-4.5 bg-gradient-to-r from-indigo-50/90 via-purple-50/80 to-blue-50/90 border-2 border-indigo-300 rounded-2xl space-y-3.5 shadow-xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                          <div className="flex items-start gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                              <Key className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-xs font-black text-indigo-950 uppercase tracking-wide">
+                                  Organizer Allowed! Enter Unique Key to Unlock Leave Form
+                                </h4>
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-indigo-200 text-indigo-900 uppercase">
+                                  Authorized
+                                </span>
+                              </div>
+                              <p className="text-xs text-indigo-900/90 mt-0.5 leading-relaxed">
+                                Organizer <strong>{event.organizerName}</strong> has approved leave generation for your registration. Paste your unique clearance key inside the form below to generate and unlock your leave documents.
+                              </p>
+                            </div>
+                          </div>
+
+                          {registration.leaveUniqueKey && (
+                            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-indigo-200/90 shadow-2xs self-start sm:self-auto shrink-0">
+                              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Your Key:</span>
+                              <code className="font-mono font-black text-indigo-700 text-xs">{registration.leaveUniqueKey}</code>
+                              <button
+                                type="button"
+                                onClick={() => handleQuickPasteKey(registration.id, registration.leaveUniqueKey!)}
+                                className="px-2 py-0.5 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-md transition-colors cursor-pointer"
+                                title="Click to auto-paste into input field"
+                              >
+                                Auto-Paste
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Input Box & Unlock Button */}
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 pt-1">
+                          <div className="relative flex-1">
+                            <Key className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            <input
+                              type="text"
+                              value={keyInputs[registration.id] ?? ''}
+                              onChange={(e) => handleKeyInputChange(registration.id, e.target.value)}
+                              placeholder={`Paste Unique Key (e.g. ${registration.leaveUniqueKey || 'KEY-GLA-8921-X'})`}
+                              className="w-full pl-10 pr-3.5 py-2.5 text-xs font-mono font-bold bg-white border-2 border-indigo-300 rounded-xl focus:outline-hidden focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 text-slate-900 placeholder:font-sans placeholder:font-normal placeholder:text-slate-400 transition-colors"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleUnlockWithKey(event.id, registration);
+                                }
+                              }}
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleUnlockWithKey(event.id, registration)}
+                            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs hover:shadow-md transition-all shrink-0 cursor-pointer"
+                          >
+                            <Unlock className="w-4 h-4" />
+                            <span>Unlock & Generate Leave Form</span>
+                          </button>
+                        </div>
+
+                        {unlockErrors[registration.id] && (
+                          <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                            <span>{unlockErrors[registration.id]}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* STATE 1: Organizer has NOT allowed yet */
+                      <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900">
+                        <div className="flex items-start sm:items-center gap-2.5">
+                          <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+                          <span>
+                            <strong>Leave Form Generation Awaiting Organizer Allowance:</strong> The event organizer (<strong>{event.organizerName}</strong>) must authorize leave generation for your registration before a unique unlock key is issued.
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-200 text-amber-900 px-2.5 py-1 rounded-full shrink-0 self-start sm:self-auto">
+                          Allowance Pending
                         </span>
                       </div>
-                      <button
-                        onClick={() => setQrModalItem({ event, registration })}
-                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shrink-0 flex items-center gap-1.5 transition-colors"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>Check In via QR Now</span>
-                      </button>
+                    )
+                  ) : (
+                    /* STATE 3: Unlocked and Generated! */
+                    <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center justify-between gap-3 text-xs text-emerald-950">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>
+                          <strong>Leave Form Generated & Unlocked:</strong> Authorization verified with key <code className="font-mono font-bold text-emerald-800 bg-white px-1.5 py-0.5 rounded border border-emerald-200">{registration.leaveUniqueKey}</code>. Ready for download and HOD submission.
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-200 text-emerald-900 px-2.5 py-0.5 rounded-full shrink-0">
+                        Verified & Ready
+                      </span>
                     </div>
                   )}
 
                   {/* Dual Action Section: Official Form vs Personalized Letter */}
-                  <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-slate-100 ${!isPresent ? 'opacity-70' : ''}`}>
+                  <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-slate-100 ${!isUnlocked ? 'opacity-70' : ''}`}>
                     
                     {/* 1. Official Leave Form (Uploaded by Organizer) */}
                     <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between space-y-3">
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                            <span className={`w-2 h-2 rounded-full ${isPresent ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                            <span className={`w-2 h-2 rounded-full ${isUnlocked ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
                             Official Leave Form
                           </span>
                           <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
@@ -420,20 +585,20 @@ export const StudentLeaveForms: React.FC<Props> = ({
                           <button
                             onClick={() => {
                               if (effectiveUploadedPdf) {
-                                handleDownloadFolderDoc(effectiveUploadedPdf, event);
+                                handleDownloadFolderDoc(effectiveUploadedPdf, event, registration);
                               } else {
                                 handleDownloadOfficialForm(event, registration);
                               }
                             }}
-                            disabled={!isPresent}
+                            disabled={!isUnlocked}
                             className={`w-full py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors ${
-                              isPresent
+                              isUnlocked
                                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
                                 : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                             }`}
                           >
-                            {!isPresent ? <Lock className="w-3.5 h-3.5" /> : <Download className="w-4 h-4" />}
-                            <span>{isPresent ? 'Download Official Leave Form (PDF)' : 'Locked (Mark Attendance First)'}</span>
+                            {!isUnlocked ? <Lock className="w-3.5 h-3.5" /> : <Download className="w-4 h-4" />}
+                            <span>{isUnlocked ? 'Download Official Leave Form (PDF)' : isAllowed ? 'Locked (Paste Unique Key to Unlock)' : 'Locked (Awaiting Organizer Allowance)'}</span>
                           </button>
                         </div>
                       ) : (
@@ -455,17 +620,19 @@ export const StudentLeaveForms: React.FC<Props> = ({
                         <div>
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
-                              <span className={`w-2 h-2 rounded-full ${isPresent ? 'bg-blue-600' : 'bg-slate-400'}`}></span>
+                              <span className={`w-2 h-2 rounded-full ${isUnlocked ? 'bg-blue-600' : 'bg-slate-400'}`}></span>
                               Personalized Leave Application
                             </span>
                             <span className="text-[10px] uppercase tracking-wider text-blue-700 bg-blue-100/90 px-2 py-0.5 rounded-full font-bold">
-                              {isPresent ? 'Ready' : 'Pending Attendance'}
+                              {isUnlocked ? 'Ready' : isAllowed ? 'Key Required' : 'Allowance Pending'}
                             </span>
                           </div>
                           <p className="text-[11px] text-blue-900/80 leading-relaxed">
-                            {isPresent 
-                              ? 'Personalized formal request letter to HOD auto-populated from your verified academic profile.'
-                              : 'Generated automatically after you attend the event and scan the venue QR code.'}
+                            {isUnlocked 
+                              ? 'Personalized formal request letter to HOD generated from your verified academic profile.'
+                              : isAllowed 
+                              ? 'Organizer has authorized this leave form. Paste the unique key above to unlock and generate.'
+                              : 'Generated once authorized by the organizer and verified with your unique clearance key.'}
                           </p>
                         </div>
 
@@ -500,16 +667,16 @@ export const StudentLeaveForms: React.FC<Props> = ({
 
                               <button
                                 type="button"
-                                onClick={() => handleDownloadFolderDoc(effectiveUploadedPdf, event)}
-                                disabled={!isPresent}
+                                onClick={() => handleDownloadFolderDoc(effectiveUploadedPdf, event, registration)}
+                                disabled={!isUnlocked}
                                 className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer ${
-                                  isPresent
+                                  isUnlocked
                                     ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-2xs'
                                     : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                                 }`}
-                                title={isPresent ? 'Download PDF uploaded by organiser' : 'Locked until attendance QR check-in'}
+                                title={isUnlocked ? 'Download PDF uploaded by organiser' : 'Locked until unique key verification'}
                               >
-                                {isPresent ? <Download className="w-3 h-3 text-white" /> : <Lock className="w-3 h-3 text-slate-400" />}
+                                {isUnlocked ? <Download className="w-3 h-3 text-white" /> : <Lock className="w-3 h-3 text-slate-400" />}
                                 <span>Download PDF</span>
                               </button>
                             </div>
@@ -523,7 +690,7 @@ export const StudentLeaveForms: React.FC<Props> = ({
                       </div>
 
                       {/* Letter Action Buttons */}
-                      {isPresent ? (
+                      {isUnlocked ? (
                         <div className="flex items-center gap-2 pt-1 border-t border-indigo-200/50">
                           <button
                             onClick={() => setPreviewModalEvent(event)}
@@ -541,20 +708,17 @@ export const StudentLeaveForms: React.FC<Props> = ({
                           </button>
                         </div>
                       ) : (
-                        <button
-                          onClick={() => setQrModalItem({ event, registration })}
-                          className="w-full py-2 px-3 bg-slate-200 text-slate-500 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-slate-300 transition-colors cursor-pointer"
-                        >
+                        <div className="w-full py-2 px-3 bg-slate-200 text-slate-500 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5">
                           <Lock className="w-3.5 h-3.5" />
-                          <span>Scan QR Code to Unlock</span>
-                        </button>
+                          <span>{isAllowed ? 'Paste Unique Key Above to Unlock' : 'Locked (Awaiting Organizer Allowance)'}</span>
+                        </div>
                       )}
                     </div>
 
                   </div>
 
                   {/* 3. Event Leave Form Folders & Slips Uploaded by Organizer */}
-                  {isPresent && (() => {
+                  {isUnlocked && (() => {
                     const folders = apiService.getEventFolders(event.id);
                     const liveFiles = folders.flatMap(f => f.files.filter(file => file.isAvailable).map(file => ({ ...file, folderName: f.name })));
                     if (liveFiles.length === 0) return null;
@@ -578,14 +742,16 @@ export const StudentLeaveForms: React.FC<Props> = ({
                                 </span>
                                 <p className="text-xs font-bold text-slate-800 truncate mt-0.5">{file.title}</p>
                                 <p className="text-[10px] text-slate-400 font-mono">
-                                  {(file.fileSize / 1024).toFixed(0)} KB &bull; {file.fileName}
+                                  {file.fileName} &bull; {(file.fileSize / 1024).toFixed(0)} KB
                                 </p>
                               </div>
+
                               <button
-                                onClick={() => handleDownloadFolderDoc(file, event)}
-                                className="px-3 py-1.5 bg-white hover:bg-purple-600 hover:text-white border border-slate-200 text-purple-700 rounded-lg text-xs font-bold shrink-0 flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                                type="button"
+                                onClick={() => handleDownloadFolderDoc(file, event, registration)}
+                                className="px-2.5 py-1.5 bg-white hover:bg-purple-600 text-purple-700 hover:text-white border border-purple-200 hover:border-purple-600 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all shadow-2xs shrink-0 cursor-pointer"
                               >
-                                <Download className="w-3 h-3 text-purple-600" />
+                                <Download className="w-3.5 h-3.5" />
                                 <span>Download</span>
                               </button>
                             </div>

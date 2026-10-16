@@ -260,36 +260,46 @@ export const INITIAL_EVENTS: CampusEvent[] = [
 export const INITIAL_REGISTRATIONS: EventRegistration[] = [
   {
     id: 'reg-501',
-    eventId: 'evt-301', // CodeSprint 2026 (Has available official form & attendance verified!)
+    eventId: 'evt-301', // CodeSprint 2026 (Organizer Allowed! Unique Key ready to be pasted inside the form to unlock)
     studentId: 'stu-101',
     registeredAt: '2026-10-12T16:20:00Z',
     status: 'confirmed',
     registrationCode: 'CG-REG-8921-X',
     attendanceStatus: 'present',
     attendanceMarkedAt: '2026-10-14T10:05:00Z',
+    organizerAllowedLeave: true,
+    organizerAllowedAt: '2026-10-14T11:00:00Z',
+    leaveUniqueKey: 'KEY-GLA-8921-X',
+    leaveFormUnlocked: false, // Student can paste the key inside the form to unlock!
     officialFormDownloaded: false,
     personalApplicationDownloaded: true,
     personalApplicationDownloadedAt: '2026-10-12T16:22:00Z'
   },
   {
     id: 'reg-502',
-    eventId: 'evt-302', // Robotics Workshop (Attendance Pending - QR Scan Required)
+    eventId: 'evt-302', // Robotics Workshop (Awaiting Organizer Allowance)
     studentId: 'stu-101',
     registeredAt: '2026-10-14T09:10:00Z',
     status: 'confirmed',
     registrationCode: 'CG-REG-4412-M',
     attendanceStatus: 'pending',
+    organizerAllowedLeave: false,
+    leaveUniqueKey: 'KEY-GLA-4412-M',
+    leaveFormUnlocked: false,
     officialFormDownloaded: false,
     personalApplicationDownloaded: false
   },
   {
     id: 'reg-503',
-    eventId: 'evt-304', // Quantum Computing (Attendance Pending)
+    eventId: 'evt-304', // Quantum Computing (Awaiting Organizer Allowance)
     studentId: 'stu-101',
     registeredAt: '2026-10-15T11:45:00Z',
     status: 'confirmed',
     registrationCode: 'CG-REG-7703-Q',
     attendanceStatus: 'pending',
+    organizerAllowedLeave: false,
+    leaveUniqueKey: 'KEY-GLA-7703-Q',
+    leaveFormUnlocked: false,
     officialFormDownloaded: false,
     personalApplicationDownloaded: false
   }
