@@ -181,7 +181,7 @@ export const BrowseEvents: React.FC<Props> = ({ currentUser, onRegisterSuccess, 
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <div className="w-full space-y-4 sm:space-y-6">
       
       {/* Banner / Title & Search Hero */}
       <div className="bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 rounded-3xl p-6 sm:p-10 text-white shadow-xl relative overflow-hidden">

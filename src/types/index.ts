@@ -78,6 +78,9 @@ export interface EventRegistration {
   officialFormDownloadedAt?: string;
   personalApplicationDownloaded: boolean;
   personalApplicationDownloadedAt?: string;
+  teamName?: string;
+  hackathonRole?: string;
+  projectTitle?: string;
 }
 
 export interface SearchFilterParams {
@@ -132,4 +135,37 @@ export interface PermissionForm {
   department: string;
   lastUpdated: string;
   downloadUrl?: string;
+  fileDataUrl?: string;
+  fileSize?: number;
+  uploadedBy?: string;
+  organizerName?: string;
+  eventId?: string;
+  eventTitle?: string;
 }
+
+export interface LeaveFolderFile {
+  id: string;
+  folderId: string;
+  eventId: string;
+  title: string;
+  fileName: string;
+  fileSize: number;
+  fileDataUrl?: string;
+  uploadedAt: string;
+  uploadedBy: string;
+  organizerName?: string;
+  isAvailable: boolean;
+  downloadCount: number;
+  description?: string;
+}
+
+export interface LeaveFolder {
+  id: string;
+  eventId: string;
+  name: string;
+  description?: string;
+  color?: string;
+  createdAt: string;
+  files: LeaveFolderFile[];
+}
+

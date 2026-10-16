@@ -8,7 +8,10 @@ import {
   CampusAnnouncement,
   CampusNotification,
   PermissionForm,
-  UserRole
+  UserRole,
+  AttendanceStatus,
+  LeaveFolder,
+  LeaveFolderFile
 } from '../types';
 import { 
   INITIAL_EVENTS, 
@@ -16,7 +19,8 @@ import {
   INITIAL_USERS,
   INITIAL_ANNOUNCEMENTS,
   INITIAL_NOTIFICATIONS,
-  INITIAL_PERMISSION_FORMS
+  INITIAL_PERMISSION_FORMS,
+  INITIAL_LEAVE_FOLDERS
 } from '../data/mockData';
 
 const STORAGE_KEYS = {
@@ -27,6 +31,7 @@ const STORAGE_KEYS = {
   ANNOUNCEMENTS: 'campusguard_announcements',
   NOTIFICATIONS: 'campusguard_notifications',
   PERMISSION_FORMS: 'campusguard_permission_forms',
+  LEAVE_FOLDERS: 'campusguard_leave_folders',
 };
 
 class ApiService {
@@ -36,6 +41,7 @@ class ApiService {
   private announcements: CampusAnnouncement[];
   private notifications: CampusNotification[];
   private permissionForms: PermissionForm[];
+  private leaveFolders: LeaveFolder[];
   private activeUserId: string;
 
   constructor() {
@@ -57,6 +63,7 @@ class ApiService {
     this.announcements = this.loadFromStorage(STORAGE_KEYS.ANNOUNCEMENTS, INITIAL_ANNOUNCEMENTS);
     this.notifications = this.loadFromStorage(STORAGE_KEYS.NOTIFICATIONS, INITIAL_NOTIFICATIONS);
     this.permissionForms = this.loadFromStorage(STORAGE_KEYS.PERMISSION_FORMS, INITIAL_PERMISSION_FORMS);
+    this.leaveFolders = this.loadFromStorage(STORAGE_KEYS.LEAVE_FOLDERS, INITIAL_LEAVE_FOLDERS);
     this.activeUserId = localStorage.getItem(STORAGE_KEYS.ACTIVE_USER_ID) || 'stu-101';
   }
 
@@ -80,6 +87,7 @@ class ApiService {
       localStorage.setItem(STORAGE_KEYS.ANNOUNCEMENTS, JSON.stringify(this.announcements));
       localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(this.notifications));
       localStorage.setItem(STORAGE_KEYS.PERMISSION_FORMS, JSON.stringify(this.permissionForms));
+      localStorage.setItem(STORAGE_KEYS.LEAVE_FOLDERS, JSON.stringify(this.leaveFolders));
       localStorage.setItem(STORAGE_KEYS.ACTIVE_USER_ID, this.activeUserId);
     } catch (err) {
       console.error('Error saving to localStorage', err);
@@ -509,6 +517,151 @@ class ApiService {
     );
   }
 
+  // --- PARTICIPANT MANAGEMENT FOR ORGANIZERS ---
+  public addStudentParticipant(
+    organizerId: string,
+    eventId: string,
+    studentData: {
+      name: string;
+      studentId: string;
+      email: string;
+      department?: string;
+      course?: string;
+      year?: string;
+      teamName?: string;
+      hackathonRole?: string;
+      attendanceStatus?: AttendanceStatus;
+    }
+  ): { registration: EventRegistration; student: User } {
+    const event = this.events.find(e => e.id === eventId);
+    if (!event) throw new Error('Event not found');
+
+    let student = this.users.find(
+      u => (u.studentId && u.studentId.trim().toLowerCase() === studentData.studentId.trim().toLowerCase()) ||
+           u.email.toLowerCase() === studentData.email.toLowerCase().trim()
+    );
+
+    if (!student) {
+      student = {
+        id: `stu-${Date.now()}`,
+        name: studentData.name.trim(),
+        email: studentData.email.trim().toLowerCase(),
+        role: 'student',
+        studentId: studentData.studentId.trim(),
+        department: studentData.department?.trim() || 'Computer Science & Engineering',
+        course: studentData.course?.trim() || 'B.Tech CSE',
+        year: studentData.year?.trim() || '3rd Year',
+        universityName: 'GLA UNIVERSITY MATHURA',
+        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+      };
+      this.users.push(student);
+    } else {
+      if (studentData.name) student.name = studentData.name.trim();
+      if (studentData.studentId) student.studentId = studentData.studentId.trim();
+      if (studentData.department) student.department = studentData.department.trim();
+      if (studentData.course) student.course = studentData.course.trim();
+      if (studentData.year) student.year = studentData.year.trim();
+    }
+
+    const existingReg = this.registrations.find(
+      r => r.eventId === eventId && r.studentId === student!.id && r.status === 'confirmed'
+    );
+    if (existingReg) {
+      existingReg.teamName = studentData.teamName || existingReg.teamName;
+      existingReg.hackathonRole = studentData.hackathonRole || existingReg.hackathonRole;
+      if (studentData.attendanceStatus) {
+        existingReg.attendanceStatus = studentData.attendanceStatus;
+        if (studentData.attendanceStatus === 'present' && !existingReg.attendanceMarkedAt) {
+          existingReg.attendanceMarkedAt = new Date().toISOString();
+        }
+      }
+      this.saveToStorage();
+      return { registration: existingReg, student };
+    }
+
+    const attendance = studentData.attendanceStatus || 'pending';
+    const newReg: EventRegistration = {
+      id: `reg-${Date.now()}`,
+      eventId,
+      studentId: student.id,
+      registeredAt: new Date().toISOString(),
+      status: 'confirmed',
+      registrationCode: `GLA-HK-${Math.floor(1000 + Math.random() * 9000)}`,
+      attendanceStatus: attendance,
+      attendanceMarkedAt: attendance === 'present' ? new Date().toISOString() : undefined,
+      officialFormDownloaded: false,
+      personalApplicationDownloaded: false,
+      teamName: studentData.teamName?.trim() || 'Solo Participant',
+      hackathonRole: studentData.hackathonRole?.trim() || 'Fullstack Hacker'
+    };
+
+    this.registrations.unshift(newReg);
+    event.registeredCount = (event.registeredCount || 0) + 1;
+    this.saveToStorage();
+
+    return { registration: newReg, student };
+  }
+
+  public updateStudentParticipant(
+    organizerId: string,
+    registrationId: string,
+    studentId: string,
+    updates: {
+      name?: string;
+      studentId?: string;
+      email?: string;
+      department?: string;
+      course?: string;
+      year?: string;
+      teamName?: string;
+      hackathonRole?: string;
+      projectTitle?: string;
+      attendanceStatus?: AttendanceStatus;
+    }
+  ): { registration: EventRegistration; student: User } {
+    const reg = this.registrations.find(r => r.id === registrationId);
+    if (!reg) throw new Error('Registration record not found');
+
+    const student = this.users.find(u => u.id === studentId);
+    if (!student) throw new Error('Student profile not found');
+
+    if (updates.name !== undefined) student.name = updates.name.trim();
+    if (updates.studentId !== undefined) student.studentId = updates.studentId.trim();
+    if (updates.email !== undefined) student.email = updates.email.trim();
+    if (updates.department !== undefined) student.department = updates.department.trim();
+    if (updates.course !== undefined) student.course = updates.course.trim();
+    if (updates.year !== undefined) student.year = updates.year.trim();
+
+    if (updates.teamName !== undefined) reg.teamName = updates.teamName.trim();
+    if (updates.hackathonRole !== undefined) reg.hackathonRole = updates.hackathonRole.trim();
+    if (updates.projectTitle !== undefined) reg.projectTitle = updates.projectTitle.trim();
+    if (updates.attendanceStatus !== undefined) {
+      reg.attendanceStatus = updates.attendanceStatus;
+      if (updates.attendanceStatus === 'present' && !reg.attendanceMarkedAt) {
+        reg.attendanceMarkedAt = new Date().toISOString();
+      } else if (updates.attendanceStatus !== 'present') {
+        reg.attendanceMarkedAt = undefined;
+      }
+    }
+
+    this.saveToStorage();
+    return { registration: reg, student };
+  }
+
+  public deleteStudentParticipant(organizerId: string, registrationId: string): boolean {
+    const reg = this.registrations.find(r => r.id === registrationId);
+    if (!reg) return false;
+
+    const event = this.events.find(e => e.id === reg.eventId);
+    if (event && event.registeredCount && event.registeredCount > 0) {
+      event.registeredCount -= 1;
+    }
+
+    this.registrations = this.registrations.filter(r => r.id !== registrationId);
+    this.saveToStorage();
+    return true;
+  }
+
   // --- REQUIREMENT 1: ORGANIZER LEAVE FORM MANAGEMENT ---
   // POST /api/organizer/events/{eventId}/leave-form-template
   public uploadLeaveFormTemplate(
@@ -691,7 +844,67 @@ class ApiService {
   // Permission Forms API
   public getPermissionForms(role?: 'student' | 'organizer'): PermissionForm[] {
     if (!role) return this.permissionForms;
-    return this.permissionForms.filter(f => f.targetRole === role);
+    if (role === 'student') {
+      return this.permissionForms.filter(f => f.targetRole === 'student');
+    }
+    // Return all forms for organizer dashboard
+    return this.permissionForms;
+  }
+
+  public uploadPermissionForm(organizerId: string, formPayload: {
+    title: string;
+    purpose: string;
+    department?: string;
+    fileName: string;
+    fileDataUrl?: string;
+    fileSize?: number;
+    eventId?: string;
+    eventTitle?: string;
+  }): PermissionForm {
+    const organizer = this.users.find(u => u.id === organizerId);
+    const newForm: PermissionForm = {
+      id: `pf-${Date.now()}`,
+      title: formPayload.title,
+      purpose: formPayload.purpose,
+      targetRole: 'student', // Published directly for students!
+      fileName: formPayload.fileName,
+      department: formPayload.department || organizer?.department || 'Student Affairs & Campus Activities',
+      lastUpdated: new Date().toISOString().split('T')[0],
+      fileDataUrl: formPayload.fileDataUrl,
+      fileSize: formPayload.fileSize,
+      uploadedBy: organizerId,
+      organizerName: organizer?.name || 'Club Organizer',
+      eventId: formPayload.eventId,
+      eventTitle: formPayload.eventTitle
+    };
+
+    this.permissionForms.unshift(newForm);
+    this.saveToStorage();
+
+    // Broadcast notification to students
+    const notif: CampusNotification = {
+      id: `notif-${Date.now()}`,
+      userId: 'student',
+      title: 'New Permission Form Available',
+      message: `${newForm.organizerName} uploaded "${newForm.title}". Students can download this form now.`,
+      createdAt: new Date().toISOString(),
+      read: false,
+      type: 'announcement'
+    };
+    this.notifications.unshift(notif);
+    this.saveToStorage();
+
+    return newForm;
+  }
+
+  public deletePermissionForm(formId: string): boolean {
+    const initialLen = this.permissionForms.length;
+    this.permissionForms = this.permissionForms.filter(f => f.id !== formId);
+    if (this.permissionForms.length !== initialLen) {
+      this.saveToStorage();
+      return true;
+    }
+    return false;
   }
 
   // Users management for Admin
@@ -764,6 +977,291 @@ class ApiService {
     };
   }
 
+  // --- LEAVE FORM FOLDERS & REPOSITORY WORKFLOW ---
+  public getEventFolders(eventId: string): LeaveFolder[] {
+    let folders = this.leaveFolders.filter(f => f.eventId === eventId);
+    if (folders.length === 0) {
+      // Seed initial standard folders for this event
+      const defaultFolders: LeaveFolder[] = [
+        {
+          id: `fld-${eventId}-1`,
+          eventId,
+          name: 'Official Exemption & Leave Forms',
+          description: 'Official academic duty leave documents and clearance forms',
+          color: 'emerald',
+          createdAt: new Date().toISOString(),
+          files: []
+        },
+        {
+          id: `fld-${eventId}-2`,
+          eventId,
+          name: 'Parental Consent & Night Clearance',
+          description: 'Consent slips and guardian undertakings for participating students',
+          color: 'purple',
+          createdAt: new Date().toISOString(),
+          files: []
+        },
+        {
+          id: `fld-${eventId}-3`,
+          eventId,
+          name: 'HOD & Department Approvals',
+          description: 'Departmental recommendations and academic attendance waiver slips',
+          color: 'amber',
+          createdAt: new Date().toISOString(),
+          files: []
+        },
+        {
+          id: `fld-${eventId}-4`,
+          eventId,
+          name: 'Dean & Security Gate Pass Slips',
+          description: 'Campus gate clearance and security authorization after hours',
+          color: 'blue',
+          createdAt: new Date().toISOString(),
+          files: []
+        }
+      ];
+
+      // If the event already has an active leaveFormTemplate, place it into the first folder!
+      const evt = this.events.find(e => e.id === eventId);
+      if (evt?.leaveFormTemplate) {
+        defaultFolders[0].files.push({
+          id: `file-${eventId}-${Date.now()}`,
+          folderId: defaultFolders[0].id,
+          eventId,
+          title: evt.leaveFormTemplate.fileName.replace(/_/g, ' ').replace('.pdf', ''),
+          fileName: evt.leaveFormTemplate.fileName,
+          fileSize: evt.leaveFormTemplate.fileSize,
+          fileDataUrl: evt.leaveFormTemplate.fileUrl,
+          uploadedAt: evt.leaveFormTemplate.uploadedAt,
+          uploadedBy: evt.leaveFormTemplate.organizerId,
+          organizerName: evt.leaveFormTemplate.organizerName,
+          isAvailable: evt.leaveFormTemplate.isAvailable,
+          downloadCount: evt.leaveFormTemplate.downloadCount,
+          description: evt.leaveFormTemplate.instructions || 'Official event exemption document'
+        });
+      }
+
+      this.leaveFolders.push(...defaultFolders);
+      this.saveToStorage();
+      folders = defaultFolders;
+    }
+    return folders;
+  }
+
+  public createFolder(
+    organizerId: string,
+    eventId: string,
+    name: string,
+    description?: string,
+    color?: string
+  ): LeaveFolder {
+    const event = this.events.find(e => e.id === eventId);
+    if (!event) throw new Error('Event not found');
+
+    const newFolder: LeaveFolder = {
+      id: `fld-${eventId}-${Date.now()}`,
+      eventId,
+      name: name.trim(),
+      description: description?.trim() || 'Custom leave document folder',
+      color: color || 'purple',
+      createdAt: new Date().toISOString(),
+      files: []
+    };
+
+    this.leaveFolders.push(newFolder);
+    this.saveToStorage();
+    return newFolder;
+  }
+
+  public renameFolder(
+    organizerId: string,
+    folderId: string,
+    newName: string,
+    newDesc?: string
+  ): LeaveFolder {
+    const folder = this.leaveFolders.find(f => f.id === folderId);
+    if (!folder) throw new Error('Folder not found');
+
+    folder.name = newName.trim();
+    if (newDesc !== undefined) {
+      folder.description = newDesc.trim();
+    }
+    this.saveToStorage();
+    return folder;
+  }
+
+  public deleteFolder(organizerId: string, folderId: string): boolean {
+    const idx = this.leaveFolders.findIndex(f => f.id === folderId);
+    if (idx === -1) return false;
+
+    this.leaveFolders.splice(idx, 1);
+    this.saveToStorage();
+    return true;
+  }
+
+  public uploadFileToFolder(
+    organizerId: string,
+    folderId: string,
+    eventId: string,
+    fileData: {
+      title: string;
+      fileName: string;
+      fileSize: number;
+      fileDataUrl?: string;
+      isAvailable: boolean;
+      description?: string;
+    }
+  ): LeaveFolderFile {
+    const folder = this.leaveFolders.find(f => f.id === folderId);
+    if (!folder) throw new Error('Target folder not found');
+
+    const event = this.events.find(e => e.id === eventId);
+    if (!event) throw new Error('Associated event not found');
+
+    const organizer = this.users.find(u => u.id === organizerId);
+
+    const safeName = fileData.fileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const newFile: LeaveFolderFile = {
+      id: `file-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      folderId,
+      eventId,
+      title: fileData.title.trim() || safeName.replace(/\.[^/.]+$/, '').replace(/_/g, ' '),
+      fileName: safeName,
+      fileSize: fileData.fileSize,
+      fileDataUrl: fileData.fileDataUrl,
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: organizerId,
+      organizerName: organizer?.name || event.organizerName,
+      isAvailable: fileData.isAvailable,
+      downloadCount: 0,
+      description: fileData.description || 'Uploaded leave form document.'
+    };
+
+    folder.files.unshift(newFile);
+
+    // If this is the main exemption folder or event has no template, sync to event's primary leaveFormTemplate
+    if (folder.name.toLowerCase().includes('official') || folder.name.toLowerCase().includes('exemption') || !event.leaveFormTemplate) {
+      event.leaveFormTemplate = {
+        id: `tmpl-${newFile.id}`,
+        eventId,
+        eventName: event.title,
+        organizerId,
+        organizerName: organizer?.name || event.organizerName,
+        fileName: safeName,
+        fileSize: fileData.fileSize,
+        fileUrl: fileData.fileDataUrl || '#official-template',
+        uploadedAt: newFile.uploadedAt,
+        isAvailable: fileData.isAvailable,
+        downloadCount: 0,
+        instructions: fileData.description || 'Official department leave application template.'
+      };
+    }
+
+    // Also publish as a permission form so students find it in Permission Forms
+    const existingPerm = this.permissionForms.find(
+      p => p.eventId === eventId && p.fileName === safeName
+    );
+    if (!existingPerm) {
+      this.permissionForms.unshift({
+        id: `pf-fld-${newFile.id}`,
+        title: newFile.title,
+        purpose: fileData.description || `Official leave & exemption document for ${event.title}`,
+        targetRole: 'student',
+        fileName: safeName,
+        department: event.department || organizer?.department || 'Academic Cell',
+        lastUpdated: new Date().toISOString().split('T')[0],
+        fileDataUrl: fileData.fileDataUrl,
+        fileSize: fileData.fileSize,
+        uploadedBy: organizerId,
+        organizerName: organizer?.name || event.organizerName,
+        eventId: event.id,
+        eventTitle: event.title
+      });
+    }
+
+    this.saveToStorage();
+    return newFile;
+  }
+
+  public deleteFileFromFolder(organizerId: string, folderId: string, fileId: string): boolean {
+    const folder = this.leaveFolders.find(f => f.id === folderId);
+    if (!folder) return false;
+
+    const fileIdx = folder.files.findIndex(f => f.id === fileId);
+    if (fileIdx === -1) return false;
+
+    const deletedFile = folder.files[fileIdx];
+    folder.files.splice(fileIdx, 1);
+
+    // If event has this as leaveFormTemplate, clear or fallback to next available
+    const event = this.events.find(e => e.id === folder.eventId);
+    if (event?.leaveFormTemplate?.fileName === deletedFile.fileName) {
+      const fallbackFile = folder.files[0];
+      if (fallbackFile) {
+        event.leaveFormTemplate = {
+          id: `tmpl-${fallbackFile.id}`,
+          eventId: event.id,
+          eventName: event.title,
+          organizerId: fallbackFile.uploadedBy,
+          organizerName: fallbackFile.organizerName || event.organizerName,
+          fileName: fallbackFile.fileName,
+          fileSize: fallbackFile.fileSize,
+          fileUrl: fallbackFile.fileDataUrl || '#official-template',
+          uploadedAt: fallbackFile.uploadedAt,
+          isAvailable: fallbackFile.isAvailable,
+          downloadCount: fallbackFile.downloadCount,
+          instructions: fallbackFile.description
+        };
+      } else {
+        event.leaveFormTemplate = undefined;
+      }
+    }
+
+    this.saveToStorage();
+    return true;
+  }
+
+  public toggleFolderFileAvailability(organizerId: string, folderId: string, fileId: string): boolean {
+    const folder = this.leaveFolders.find(f => f.id === folderId);
+    if (!folder) return false;
+
+    const file = folder.files.find(f => f.id === fileId);
+    if (!file) return false;
+
+    file.isAvailable = !file.isAvailable;
+
+    const event = this.events.find(e => e.id === folder.eventId);
+    if (event?.leaveFormTemplate?.fileName === file.fileName) {
+      event.leaveFormTemplate.isAvailable = file.isAvailable;
+    }
+
+    this.saveToStorage();
+    return file.isAvailable;
+  }
+
+  public recordFolderFileDownload(fileId: string): void {
+    for (const folder of this.leaveFolders) {
+      const file = folder.files.find(f => f.id === fileId);
+      if (file) {
+        file.downloadCount = (file.downloadCount || 0) + 1;
+        const event = this.events.find(e => e.id === file.eventId);
+        if (event?.leaveFormTemplate?.fileName === file.fileName) {
+          event.leaveFormTemplate.downloadCount = file.downloadCount;
+        }
+        this.saveToStorage();
+        break;
+      }
+    }
+  }
+
+  public getStudentEventFolders(eventId: string): LeaveFolder[] {
+    const folders = this.getEventFolders(eventId);
+    return folders.map(f => ({
+      ...f,
+      files: f.files.filter(file => file.isAvailable)
+    }));
+  }
+
   public resetToDefaults() {
     this.events = INITIAL_EVENTS;
     this.registrations = INITIAL_REGISTRATIONS;
@@ -771,6 +1269,7 @@ class ApiService {
     this.announcements = INITIAL_ANNOUNCEMENTS;
     this.notifications = INITIAL_NOTIFICATIONS;
     this.permissionForms = INITIAL_PERMISSION_FORMS;
+    this.leaveFolders = INITIAL_LEAVE_FOLDERS;
     this.activeUserId = 'stu-101';
     this.saveToStorage();
   }

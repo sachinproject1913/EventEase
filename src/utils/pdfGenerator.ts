@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { User, CampusEvent } from '../types';
+import { User, CampusEvent, PermissionForm } from '../types';
 
 export interface LeaveApplicationData {
   student: User;
@@ -286,3 +286,137 @@ export function generateOfficialTemplateSamplePdf(event: CampusEvent): jsPDF {
 
   return doc;
 }
+
+/**
+ * Generates an official permission & consent slip PDF
+ */
+export function generatePermissionSlipPdf(form: PermissionForm, student?: User): jsPDF {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 50;
+  const contentWidth = pageWidth - margin * 2;
+  let y = margin;
+
+  // Header Box
+  doc.setFillColor(30, 41, 59); // slate-800
+  doc.rect(margin, y, contentWidth, 65, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(255, 255, 255);
+  doc.text('GLA UNIVERSITY MATHURA', pageWidth / 2, y + 24, { align: 'center' });
+  doc.setFontSize(10);
+  doc.text('OFFICIAL STUDENT PERMISSION & CONSENT SLIP', pageWidth / 2, y + 42, { align: 'center' });
+  doc.setFontSize(8);
+  doc.text(`ISSUED BY: ${(form.department || 'CAMPUS EVENT ADMINISTRATION').toUpperCase()}`, pageWidth / 2, y + 56, { align: 'center' });
+  y += 88;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(15, 23, 42);
+  doc.text(form.title, margin, y);
+  y += 18;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Document Reference: REF-${form.id.toUpperCase()}`, margin, y);
+  doc.text(`Effective Date: ${form.lastUpdated || new Date().toISOString().split('T')[0]}`, pageWidth - margin, y, { align: 'right' });
+  y += 22;
+
+  // Purpose / Requirement
+  doc.setFillColor(241, 245, 249);
+  doc.rect(margin, y, contentWidth, 58, 'F');
+  doc.setDrawColor(203, 213, 225);
+  doc.rect(margin, y, contentWidth, 58, 'S');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('PURPOSE & MANDATORY DIRECTIVES:', margin + 12, y + 17);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(51, 65, 85);
+  const purposeLines = doc.splitTextToSize(form.purpose, contentWidth - 24);
+  doc.text(purposeLines, margin + 12, y + 32);
+  y += 75;
+
+  if (form.eventTitle) {
+    doc.setFillColor(238, 242, 255); // indigo-50
+    doc.rect(margin, y, contentWidth, 32, 'F');
+    doc.setDrawColor(199, 210, 254);
+    doc.rect(margin, y, contentWidth, 32, 'S');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(67, 56, 202);
+    doc.text(`LINKED EVENT: ${form.eventTitle}`, margin + 12, y + 15);
+    if (form.organizerName) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(79, 70, 229);
+      doc.text(`Authorized Coordinator: ${form.organizerName}`, margin + 12, y + 26);
+    }
+    y += 46;
+  }
+
+  // Student Information Box
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('SECTION 1: STUDENT CREDENTIALS', margin, y);
+  y += 14;
+
+  doc.rect(margin, y, contentWidth, 80);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(`Student Name: ${student?.name || '__________________________________'}`, margin + 12, y + 22);
+  doc.text(`Roll / University ID: ${student?.studentId || '____________________'}`, margin + 270, y + 22);
+  doc.text(`Department: ${student?.department || '__________________________'}`, margin + 12, y + 44);
+  doc.text(`Course / Year: ${student?.course || '__________'} (${student?.year || '____'})`, margin + 270, y + 44);
+  doc.text(`Student Contact: ____________________________`, margin + 12, y + 66);
+  doc.text(`Parent / Guardian Phone: ____________________`, margin + 270, y + 66);
+  y += 100;
+
+  // Undertaking & Signatures
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.text('SECTION 2: DECLARATION & AUTHORIZATION SIGNATURES', margin, y);
+  y += 14;
+
+  doc.rect(margin, y, contentWidth, 110);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.text('I hereby undertake full compliance with campus safety guidelines, event decorum, and academic regulations.', margin + 12, y + 18);
+  
+  y += 56;
+  doc.text('_________________________________', margin + 20, y);
+  doc.text('Student Signature & Date', margin + 20, y + 14);
+
+  doc.text('_________________________________', margin + 190, y);
+  doc.text('Parent / Guardian Signature', margin + 190, y + 14);
+
+  doc.text('_________________________________', margin + 355, y);
+  doc.text('Faculty Coordinator / HOD Seal', margin + 355, y + 14);
+
+  return doc;
+}
+
+/**
+ * Downloads a permission form file directly (data URL or generated PDF)
+ */
+export function downloadPermissionForm(form: PermissionForm, student?: User): void {
+  if (form.fileDataUrl) {
+    const link = document.createElement('a');
+    link.href = form.fileDataUrl;
+    link.download = form.fileName || `Permission_Slip_${form.id}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } else {
+    const doc = generatePermissionSlipPdf(form, student);
+    const rawName = form.fileName || `${form.title.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30)}.pdf`;
+    const safeName = rawName.toLowerCase().endsWith('.pdf') ? rawName : `${rawName}.pdf`;
+    doc.save(safeName);
+  }
+}
+

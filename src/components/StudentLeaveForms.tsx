@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, CampusEvent, EventRegistration } from '../types';
+import { User, CampusEvent, EventRegistration, LeaveFolderFile } from '../types';
 import { apiService } from '../services/apiService';
 import { 
   formatEventDateRange, 
@@ -18,16 +18,17 @@ import {
   AlertTriangle, 
   Clock, 
   Eye, 
-  Info,
-  Building,
-  CheckCircle2,
-  CalendarCheck2,
-  QrCode,
-  Lock,
-  Copy,
-  Check,
-  ShieldCheck,
-  Sparkles
+  Info, 
+  Building, 
+  CheckCircle2, 
+  CalendarCheck2, 
+  QrCode, 
+  Lock, 
+  Copy, 
+  Check, 
+  ShieldCheck, 
+  Sparkles,
+  Folder
 } from 'lucide-react';
 
 interface Props {
@@ -110,8 +111,26 @@ export const StudentLeaveForms: React.FC<Props> = ({
     showToast('Personalized leave application letter downloaded successfully.');
   };
 
+  const handleDownloadFolderDoc = (file: { id: string; fileName: string; title: string; fileDataUrl?: string }, event: CampusEvent) => {
+    apiService.recordFolderFileDownload(file.id);
+    if (file.fileDataUrl && file.fileDataUrl.startsWith('data:')) {
+      const link = document.createElement('a');
+      link.href = file.fileDataUrl;
+      link.download = file.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast(`Downloading "${file.fileName}"...`);
+    } else {
+      const doc = generateOfficialTemplateSamplePdf(event);
+      doc.save(file.fileName || `Official_Leave_Form_${event.id}.pdf`);
+      showToast(`Downloaded official PDF for "${file.title}".`);
+    }
+    refreshData();
+  };
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <div className="w-full space-y-4 sm:space-y-6">
       
       {/* Toast Alert */}
       {toastMessage && (
@@ -236,7 +255,21 @@ export const StudentLeaveForms: React.FC<Props> = ({
             {registrations.map(({ registration, event }) => {
               const dateRangeStr = formatEventDateRange(event.startDate, event.endDate);
               const template = event.leaveFormTemplate;
-              const hasOfficialTemplate = template !== undefined && template.isAvailable === true;
+              const eventFolders = apiService.getEventFolders(event.id);
+              const liveFolderFiles = eventFolders.flatMap(f => 
+                f.files.filter(file => file.isAvailable).map(file => ({ ...file, folderName: f.name }))
+              );
+              const effectiveUploadedPdf = liveFolderFiles[0] || (template && template.isAvailable ? {
+                id: template.id || `tmpl-${event.id}`,
+                title: template.fileName ? template.fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') : `${event.title} Official Leave Form`,
+                fileName: template.fileName || `Official_Leave_Form_${event.id}.pdf`,
+                fileSize: template.fileSize || 245000,
+                fileDataUrl: template.fileUrl,
+                organizerName: template.organizerName || event.organizerName,
+                folderName: 'Official Exemption',
+                description: 'Official leave form uploaded by event organizer'
+              } : null);
+              const hasOfficialTemplate = (template !== undefined && template.isAvailable === true) || Boolean(effectiveUploadedPdf);
               const isPresent = registration.attendanceStatus === 'present';
 
               return (
@@ -378,18 +411,24 @@ export const StudentLeaveForms: React.FC<Props> = ({
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-[11px] text-slate-600 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200">
                             <span className="truncate max-w-[200px] font-mono text-[10px]">
-                              {template?.fileName}
+                              {effectiveUploadedPdf?.fileName || template?.fileName}
                             </span>
                             <span className="text-slate-400">
-                              {(template?.fileSize ? template.fileSize / 1024 : 150).toFixed(0)} KB
+                              {((effectiveUploadedPdf?.fileSize || template?.fileSize || 150000) / 1024).toFixed(0)} KB
                             </span>
                           </div>
                           <button
-                            onClick={() => handleDownloadOfficialForm(event, registration)}
+                            onClick={() => {
+                              if (effectiveUploadedPdf) {
+                                handleDownloadFolderDoc(effectiveUploadedPdf, event);
+                              } else {
+                                handleDownloadOfficialForm(event, registration);
+                              }
+                            }}
                             disabled={!isPresent}
                             className={`w-full py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors ${
                               isPresent
-                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
                                 : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                             }`}
                           >
@@ -410,46 +449,101 @@ export const StudentLeaveForms: React.FC<Props> = ({
                       )}
                     </div>
 
-                    {/* 2. Personalized Leave Application (Automatically Generated) */}
-                    <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 flex flex-col justify-between space-y-3">
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
-                            <span className={`w-2 h-2 rounded-full ${isPresent ? 'bg-blue-600' : 'bg-slate-400'}`}></span>
-                            Personalized Leave Application
-                          </span>
-                          <span className="text-[10px] uppercase tracking-wider text-blue-600 font-bold">
-                            {isPresent ? 'Ready' : 'Pending Attendance'}
-                          </span>
+                    {/* 2. Personalized Leave Application (Automatically Generated) & Organizer Uploaded PDF */}
+                    <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50/90 via-indigo-50/60 to-purple-50/40 border-2 border-indigo-200/90 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between space-y-3.5">
+                      <div className="space-y-3">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+                              <span className={`w-2 h-2 rounded-full ${isPresent ? 'bg-blue-600' : 'bg-slate-400'}`}></span>
+                              Personalized Leave Application
+                            </span>
+                            <span className="text-[10px] uppercase tracking-wider text-blue-700 bg-blue-100/90 px-2 py-0.5 rounded-full font-bold">
+                              {isPresent ? 'Ready' : 'Pending Attendance'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-blue-900/80 leading-relaxed">
+                            {isPresent 
+                              ? 'Personalized formal request letter to HOD auto-populated from your verified academic profile.'
+                              : 'Generated automatically after you attend the event and scan the venue QR code.'}
+                          </p>
                         </div>
-                        <p className="text-[11px] text-blue-800">
-                          {isPresent 
-                            ? 'Personalized 1-page formal request to HOD populated from your profile.'
-                            : 'Generated after you attend the event and scan the venue QR code.'}
-                        </p>
+
+                        {/* PDF Uploaded by Organiser (Shown directly in this element) */}
+                        {effectiveUploadedPdf ? (
+                          <div className="p-3 bg-white/95 rounded-xl border border-indigo-200/80 shadow-2xs space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 flex items-center gap-1.5">
+                                <FileText className="w-3.5 h-3.5 text-purple-600" />
+                                <span>PDF Uploaded by Organiser</span>
+                              </span>
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-purple-100 text-purple-800">
+                                {effectiveUploadedPdf.folderName || 'Official Slip'}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-2 text-xs">
+                              <div className="min-w-0">
+                                <p className="font-bold text-slate-800 truncate text-[11px]" title={effectiveUploadedPdf.title}>
+                                  {effectiveUploadedPdf.title}
+                                </p>
+                                <p className="text-[10px] text-slate-500 font-mono truncate">
+                                  {effectiveUploadedPdf.fileName} &bull; {(effectiveUploadedPdf.fileSize / 1024).toFixed(0)} KB
+                                </p>
+                                {effectiveUploadedPdf.organizerName && (
+                                  <p className="text-[10px] text-purple-700 mt-0.5 flex items-center gap-1">
+                                    <ShieldCheck className="w-3 h-3 text-purple-600 inline" />
+                                    <span>Uploaded by {effectiveUploadedPdf.organizerName}</span>
+                                  </p>
+                                )}
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadFolderDoc(effectiveUploadedPdf, event)}
+                                disabled={!isPresent}
+                                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer ${
+                                  isPresent
+                                    ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-2xs'
+                                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                }`}
+                                title={isPresent ? 'Download PDF uploaded by organiser' : 'Locked until attendance QR check-in'}
+                              >
+                                {isPresent ? <Download className="w-3 h-3 text-white" /> : <Lock className="w-3 h-3 text-slate-400" />}
+                                <span>Download PDF</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-2.5 bg-white/70 rounded-xl border border-dashed border-indigo-200 text-[11px] text-slate-500 flex items-center gap-2">
+                            <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span>Organiser leave form PDF will appear here once uploaded.</span>
+                          </div>
+                        )}
                       </div>
 
+                      {/* Letter Action Buttons */}
                       {isPresent ? (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 pt-1 border-t border-indigo-200/50">
                           <button
                             onClick={() => setPreviewModalEvent(event)}
-                            className="flex-1 py-2 px-3 bg-white hover:bg-blue-100 text-blue-700 border border-blue-300 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                            className="flex-1 py-2 px-3 bg-white hover:bg-blue-50 text-blue-700 border border-blue-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
                           >
                             <Eye className="w-3.5 h-3.5" />
                             <span>Preview Letter</span>
                           </button>
                           <button
                             onClick={() => handleDownloadPersonalApplication(event, registration)}
-                            className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors"
+                            className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
                           >
                             <Download className="w-3.5 h-3.5" />
-                            <span>Download PDF</span>
+                            <span>Download Letter (PDF)</span>
                           </button>
                         </div>
                       ) : (
                         <button
                           onClick={() => setQrModalItem({ event, registration })}
-                          className="w-full py-2 px-3 bg-slate-200 text-slate-500 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-slate-300 transition-colors"
+                          className="w-full py-2 px-3 bg-slate-200 text-slate-500 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-slate-300 transition-colors cursor-pointer"
                         >
                           <Lock className="w-3.5 h-3.5" />
                           <span>Scan QR Code to Unlock</span>
@@ -458,6 +552,48 @@ export const StudentLeaveForms: React.FC<Props> = ({
                     </div>
 
                   </div>
+
+                  {/* 3. Event Leave Form Folders & Slips Uploaded by Organizer */}
+                  {isPresent && (() => {
+                    const folders = apiService.getEventFolders(event.id);
+                    const liveFiles = folders.flatMap(f => f.files.filter(file => file.isAvailable).map(file => ({ ...file, folderName: f.name })));
+                    if (liveFiles.length === 0) return null;
+
+                    return (
+                      <div className="pt-3 border-t border-slate-100 space-y-2">
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                          <span className="flex items-center gap-1.5">
+                            <Folder className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Additional Exemption Forms from Organizer Folders ({liveFiles.length})</span>
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-normal">Uploaded by Event Convenor</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {liveFiles.map(file => (
+                            <div key={file.id} className="p-3 bg-slate-50 hover:bg-purple-50/30 border border-slate-200 hover:border-purple-200 rounded-xl flex items-center justify-between gap-2.5 transition-all">
+                              <div className="min-w-0">
+                                <span className="text-[9px] uppercase font-bold text-purple-700 bg-purple-50 px-1.5 py-0.2 rounded border border-purple-200">
+                                  {file.folderName}
+                                </span>
+                                <p className="text-xs font-bold text-slate-800 truncate mt-0.5">{file.title}</p>
+                                <p className="text-[10px] text-slate-400 font-mono">
+                                  {(file.fileSize / 1024).toFixed(0)} KB &bull; {file.fileName}
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => handleDownloadFolderDoc(file, event)}
+                                className="px-3 py-1.5 bg-white hover:bg-purple-600 hover:text-white border border-slate-200 text-purple-700 rounded-lg text-xs font-bold shrink-0 flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                              >
+                                <Download className="w-3 h-3 text-purple-600" />
+                                <span>Download</span>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Submission note */}
                   <div className="flex items-center gap-2 text-[11px] text-slate-500 bg-slate-50 px-3 py-2 rounded-xl">

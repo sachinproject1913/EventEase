@@ -116,7 +116,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col text-slate-900 selection:bg-blue-100 selection:text-blue-900">
+    <div className="min-h-screen bg-slate-50 flex flex-col text-slate-900 selection:bg-blue-100 selection:text-blue-900 w-full max-w-full overflow-x-hidden">
       
       {/* Top Navbar */}
       <Navbar
@@ -130,7 +130,7 @@ export default function App() {
       />
 
       {/* Main View: Strictly Isolated Role-Based Panels */}
-      <main className="flex-1 pb-16">
+      <main className="flex-1 w-full max-w-full pb-16">
         
         {/* 1. STUDENT / USER PANEL: Download only, Browse events, My registrations, QR check-in */}
         {currentUser.role === 'student' && (

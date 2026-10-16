@@ -5,7 +5,9 @@ import {
   LeaveFormTemplate,
   CampusAnnouncement,
   CampusNotification,
-  PermissionForm
+  PermissionForm,
+  LeaveFolder,
+  LeaveFolderFile
 } from '../types';
 
 export const INITIAL_USERS: User[] = [
@@ -395,14 +397,90 @@ export const INITIAL_PERMISSION_FORMS: PermissionForm[] = [
     fileName: 'Auditorium_Booking_Requisition_Form.pdf',
     department: 'Campus Estates & Facilities Directorate',
     lastUpdated: '2026-09-15'
-  },
-  {
-    id: 'pf-4',
-    title: 'Sponsorship Clearance & External Brand Approval Form',
-    purpose: 'Required when hosting corporate sponsored hackathons or distributing external tech merchandise.',
-    targetRole: 'organizer',
-    fileName: 'Corporate_Sponsorship_Clearance_Form.pdf',
-    department: 'University External Relations & Placement Cell',
-    lastUpdated: '2026-09-28'
   }
 ];
+
+export const INITIAL_LEAVE_FOLDERS: LeaveFolder[] = [
+  {
+    id: 'fld-301-1',
+    eventId: 'evt-301',
+    name: 'Official Exemption & Leave Forms',
+    description: 'Main academic duty leave forms for 36-Hour Hackathon attendees',
+    color: 'emerald',
+    createdAt: '2026-10-10T14:00:00Z',
+    files: [
+      {
+        id: 'file-301-101',
+        folderId: 'fld-301-1',
+        eventId: 'evt-301',
+        title: 'Official CodeSprint 2026 Academic OD Form',
+        fileName: 'Official_CodeSprint_2026_Leave_Form.pdf',
+        fileSize: 245000,
+        uploadedAt: '2026-10-10T14:30:00Z',
+        uploadedBy: 'org-201',
+        organizerName: 'Dr. Vikram Malhotra',
+        isAvailable: true,
+        downloadCount: 38,
+        description: 'Mandatory on-duty leave certificate signed by the Hackathon Convenor.'
+      }
+    ]
+  },
+  {
+    id: 'fld-301-2',
+    eventId: 'evt-301',
+    name: 'Parental Consent & Night Clearance',
+    description: 'Overnight stay permission slips and guardian emergency undertakings',
+    color: 'purple',
+    createdAt: '2026-10-11T10:00:00Z',
+    files: [
+      {
+        id: 'file-301-201',
+        folderId: 'fld-301-2',
+        eventId: 'evt-301',
+        title: 'Overnight Hackathon Parental Undertaking Slip',
+        fileName: 'Parental_Consent_Overnight_Hackathon.pdf',
+        fileSize: 184000,
+        uploadedAt: '2026-10-11T11:00:00Z',
+        uploadedBy: 'org-201',
+        organizerName: 'Dr. Vikram Malhotra',
+        isAvailable: true,
+        downloadCount: 22,
+        description: 'Required for all students staying in tech park overnight.'
+      }
+    ]
+  },
+  {
+    id: 'fld-301-3',
+    eventId: 'evt-301',
+    name: 'HOD & Department Approvals',
+    description: 'Department endorsements and laboratory access clearance formats',
+    color: 'amber',
+    createdAt: '2026-10-12T09:00:00Z',
+    files: [
+      {
+        id: 'file-301-301',
+        folderId: 'fld-301-3',
+        eventId: 'evt-301',
+        title: 'CSE Department HOD Endorsement Format',
+        fileName: 'CSE_Dept_HOD_Endorsement_Format.pdf',
+        fileSize: 210000,
+        uploadedAt: '2026-10-12T09:30:00Z',
+        uploadedBy: 'org-201',
+        organizerName: 'Dr. Vikram Malhotra',
+        isAvailable: true,
+        downloadCount: 19,
+        description: 'For submission to semester course coordinators.'
+      }
+    ]
+  },
+  {
+    id: 'fld-301-4',
+    eventId: 'evt-301',
+    name: 'Dean & Security Gate Pass Slips',
+    description: 'Security gate passes and campus entry/exit authorization after hours',
+    color: 'blue',
+    createdAt: '2026-10-13T16:00:00Z',
+    files: []
+  }
+];
+
