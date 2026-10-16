@@ -1,0 +1,6 @@
+{
+  "name": "CampusGuard",
+  "description": "University event discovery, organizer leave form management, and automated personalized leave application generator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
