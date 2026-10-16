@@ -4,6 +4,8 @@
 
 [build.environment]
   NODE_VERSION = "22"
+  NPM_FLAGS = "--legacy-peer-deps"
+
 
 # SPA Fallback: Redirect all routes to index.html so client-side routing works seamlessly
 [[redirects]]
