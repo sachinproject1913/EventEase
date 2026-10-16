@@ -7,7 +7,6 @@ import {
   Building,
   Server,
   Database,
-  ChevronDown,
   RotateCcw,
   ArrowUpRight,
   MousePointer2
@@ -28,7 +27,7 @@ interface Props {
 
 export const Navbar: React.FC<Props> = ({
   currentUser,
-  onSwitchUser,
+  onSwitchUser: _onSwitchUser,
   onOpenProfileEdit: _onOpenProfileEdit,
   onResetData,
   onLogout,
@@ -187,51 +186,24 @@ export const Navbar: React.FC<Props> = ({
 
             {currentUser && (
               <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end min-w-0">
-                {/* Student Account Dropdown showing Complete Student Name and Role */}
+                {/* User Account Info showing Complete User Name and Role */}
                 <div 
-                  data-cursor-text="Switch Role"
-                  className="relative flex items-center bg-slate-100/90 hover:bg-slate-100 p-1 rounded-xl border border-slate-200 min-w-0 flex-1 md:flex-initial transition-colors group"
+                  className="relative flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200 min-w-0 flex-1 md:flex-initial"
                 >
-                  <label htmlFor="persona-select" className="sr-only">Switch User Persona</label>
-                  
-                  <div className="flex items-center gap-2 pl-1.5 pr-2 min-w-0">
+                  <div className="flex items-center gap-2 px-1.5 min-w-0">
                     <img
                       src={currentUser.avatarUrl}
                       alt={currentUser.name}
-                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover border border-slate-300 shrink-0 group-hover:ring-2 group-hover:ring-blue-400 transition-all"
+                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover border border-slate-300 shrink-0"
                     />
-                    <div className="text-left min-w-0 leading-tight">
-                      <div className="text-xs font-bold text-slate-800 truncate max-w-[120px] xs:max-w-[160px] sm:max-w-[200px]">
+                    <div className="text-left min-w-0 leading-tight pr-1">
+                      <div className="text-xs font-bold text-slate-800 truncate max-w-[140px] xs:max-w-[180px] sm:max-w-[220px]">
                         {currentUser.name}
                       </div>
                       <div className="text-[10px] text-slate-500 uppercase tracking-wider font-bold truncate">
                         {currentUser.role === 'admin' ? 'Dean / Admin' : currentUser.role === 'organizer' ? 'Organizer' : 'Student'}
                       </div>
                     </div>
-                  </div>
-
-                  {/* Dropdown Selector */}
-                  <div className="relative shrink-0">
-                    <select
-                      id="persona-select"
-                      value={currentUser.id}
-                      onChange={(e) => onSwitchUser(e.target.value)}
-                      className="text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 py-1 pl-2 pr-6 rounded-lg border border-slate-200 cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-blue-500 appearance-none shadow-2xs w-[95px] sm:w-[125px] md:w-[135px] truncate"
-                      title="Switch Persona"
-                    >
-                      <optgroup label="Student Panel (Download Only)">
-                        <option value="stu-101">Aarav (Student)</option>
-                        <option value="stu-102">Sneha (Incomplete)</option>
-                      </optgroup>
-                      <optgroup label="Organizer Panel (Upload & Manage)">
-                        <option value="org-201">Dr. Vikram (CAS Org)</option>
-                        <option value="org-202">Prof. Priya (Career)</option>
-                      </optgroup>
-                      <optgroup label="Admin Panel (Governance & Audits)">
-                        <option value="adm-001">Dean Sterling (Admin)</option>
-                      </optgroup>
-                    </select>
-                    <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
                 </div>
 
