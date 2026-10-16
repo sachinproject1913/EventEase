@@ -163,22 +163,26 @@ export const RegistrationConfirmModal: React.FC<Props> = ({
                 onClose();
                 onOpenQrScanner(event, registration);
               }}
-              className="w-full sm:flex-1 py-2.5 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors"
+              data-cursor-text="Scan QR"
+              className="group w-full sm:flex-1 py-2.5 px-4 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
             >
-              <QrCode className="w-4 h-4" />
-              <span>Scan Event QR Code / Mark Attendance</span>
+              <QrCode className="w-4 h-4 group-hover:scale-110 transition-transform" />
+              <span>Scan Event QR Code / Check-in</span>
+              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
             </button>
             <button
               onClick={() => {
                 onClose();
                 onGoToLeaveForms();
               }}
-              className="w-full sm:w-auto py-2.5 px-4 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+              data-cursor-text="Leave Forms"
+              className="group w-full sm:w-auto py-2.5 px-4 bg-white hover:bg-slate-100 active:scale-95 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
             >
               <span>View in My Leave Forms</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-800 group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
+
 
         </div>
 

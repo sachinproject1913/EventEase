@@ -174,3 +174,19 @@ export interface LeaveFolder {
   files: LeaveFolderFile[];
 }
 
+export interface EmailOtpSession {
+  email: string;
+  otp: string;
+  action: 'login' | 'signup';
+  expiresAt: number; // timestamp ms
+  pendingUser?: Partial<User>;
+}
+
+export interface DispatchedEmailOtp {
+  email: string;
+  otp: string;
+  action: 'login' | 'signup';
+  timestamp: string;
+  recipientName?: string;
+}
+

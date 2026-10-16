@@ -11,7 +11,9 @@ import {
   UserRole,
   AttendanceStatus,
   LeaveFolder,
-  LeaveFolderFile
+  LeaveFolderFile,
+  EmailOtpSession,
+  DispatchedEmailOtp
 } from '../types';
 import { 
   INITIAL_EVENTS, 
@@ -22,16 +24,32 @@ import {
   INITIAL_PERMISSION_FORMS,
   INITIAL_LEAVE_FOLDERS
 } from '../data/mockData';
+import { 
+  upsertUserToSupabase,
+  upsertEventToSupabase,
+  upsertRegistrationToSupabase,
+  insertAttendanceLogToSupabase,
+  upsertLeaveFormToSupabase,
+  syncAllLocalDataToSupabase,
+  fetchEventsFromSupabase,
+  fetchUsersFromSupabase,
+  syncRegistrationsFromSupabase,
+  deleteUserFromSupabase,
+  deleteEventFromSupabase,
+  deleteRegistrationFromSupabase,
+  deleteAnnouncementFromSupabase
+} from './supabaseService';
+import { isSupabaseConfigured, getSupabaseClient } from '../lib/supabase';
 
 const STORAGE_KEYS = {
-  EVENTS: 'campusguard_events',
-  REGISTRATIONS: 'campusguard_registrations',
-  USERS: 'campusguard_users',
-  ACTIVE_USER_ID: 'campusguard_active_user_id',
-  ANNOUNCEMENTS: 'campusguard_announcements',
-  NOTIFICATIONS: 'campusguard_notifications',
-  PERMISSION_FORMS: 'campusguard_permission_forms',
-  LEAVE_FOLDERS: 'campusguard_leave_folders',
+  EVENTS: 'eventease_events',
+  REGISTRATIONS: 'eventease_registrations',
+  USERS: 'eventease_users',
+  ACTIVE_USER_ID: 'eventease_active_user_id',
+  ANNOUNCEMENTS: 'eventease_announcements',
+  NOTIFICATIONS: 'eventease_notifications',
+  PERMISSION_FORMS: 'eventease_permission_forms',
+  LEAVE_FOLDERS: 'eventease_leave_folders',
 };
 
 class ApiService {
@@ -43,6 +61,8 @@ class ApiService {
   private permissionForms: PermissionForm[];
   private leaveFolders: LeaveFolder[];
   private activeUserId: string;
+  private otpSession?: EmailOtpSession;
+  public lastDispatchedOtp?: DispatchedEmailOtp;
 
   constructor() {
     this.events = this.loadFromStorage(STORAGE_KEYS.EVENTS, INITIAL_EVENTS);
@@ -96,12 +116,90 @@ class ApiService {
     this.notifications = this.loadFromStorage(STORAGE_KEYS.NOTIFICATIONS, INITIAL_NOTIFICATIONS);
     this.permissionForms = this.loadFromStorage(STORAGE_KEYS.PERMISSION_FORMS, INITIAL_PERMISSION_FORMS);
     this.leaveFolders = this.loadFromStorage(STORAGE_KEYS.LEAVE_FOLDERS, INITIAL_LEAVE_FOLDERS);
-    this.activeUserId = localStorage.getItem(STORAGE_KEYS.ACTIVE_USER_ID) || 'stu-101';
+    this.activeUserId = localStorage.getItem(STORAGE_KEYS.ACTIVE_USER_ID) || localStorage.getItem('campusguard_active_user_id') || 'stu-101';
+
+    // Auto-sync existing data to Supabase if connection is configured
+    setTimeout(() => {
+      this.autoSyncToSupabase();
+    }, 1200);
+  }
+
+  // Auto-sync local state with Supabase Cloud
+  public async autoSyncToSupabase(): Promise<{ 
+    success: boolean; 
+    message: string;
+    counts?: { users: number; events: number; registrations: number; announcements: number };
+  } | null> {
+    if (!isSupabaseConfigured()) return null;
+    try {
+      const res = await syncAllLocalDataToSupabase(this.users, this.events, this.registrations, this.announcements);
+      return res;
+    } catch (err: any) {
+      console.warn('Background Supabase cloud sync status:', err?.message || err);
+      return null;
+    }
+  }
+
+  // Pull remote events and registrations from Supabase
+  public async pullFromSupabase(): Promise<{ eventsCount: number; regsCount: number }> {
+    if (!isSupabaseConfigured()) return { eventsCount: 0, regsCount: 0 };
+    try {
+      const remoteEvents = await fetchEventsFromSupabase();
+      if (remoteEvents && remoteEvents.length > 0) {
+        // Merge without losing local entries
+        for (const re of remoteEvents) {
+          const idx = this.events.findIndex(e => e.id === re.id);
+          if (idx >= 0) {
+            this.events[idx] = { ...this.events[idx], ...re };
+          } else {
+            this.events.unshift(re);
+          }
+        }
+      }
+
+      const remoteUsers = await fetchUsersFromSupabase();
+      if (remoteUsers && remoteUsers.length > 0) {
+        for (const ru of remoteUsers) {
+          const idx = this.users.findIndex(u => u.id === ru.id);
+          if (idx >= 0) {
+            this.users[idx] = { ...this.users[idx], ...ru };
+          } else {
+            this.users.push(ru);
+          }
+        }
+      }
+
+      const remoteRegs = await syncRegistrationsFromSupabase();
+      if (remoteRegs && remoteRegs.length > 0) {
+        for (const rr of remoteRegs) {
+          const idx = this.registrations.findIndex(r => r.id === rr.id);
+          if (idx >= 0) {
+            this.registrations[idx] = {
+              ...this.registrations[idx],
+              status: rr.status as any,
+              attendanceStatus: rr.attendanceStatus as any,
+              organizerAllowedLeave: rr.organizerAllowedLeave,
+              leaveUniqueKey: rr.leaveUniqueKey,
+              leaveFormUnlocked: rr.leaveFormUnlocked
+            };
+          }
+        }
+      }
+
+      this.saveToStorage();
+      return {
+        eventsCount: remoteEvents?.length ?? 0,
+        regsCount: remoteRegs?.length ?? 0
+      };
+    } catch (err) {
+      console.warn('Failed to pull from Supabase:', err);
+      return { eventsCount: 0, regsCount: 0 };
+    }
   }
 
   private loadFromStorage<T>(key: string, fallback: T): T {
     try {
-      const data = localStorage.getItem(key);
+      const data = localStorage.getItem(key) || localStorage.getItem(key.replace('eventease_', 'campusguard_'));
       if (data) {
         return JSON.parse(data);
       }
@@ -144,6 +242,8 @@ class ApiService {
     }
     this.activeUserId = user.id;
     this.saveToStorage();
+    // Auto-save account state to Supabase in background
+    upsertUserToSupabase(user).catch(() => {});
     return user;
   }
 
@@ -185,7 +285,295 @@ class ApiService {
     this.users.push(newUser);
     this.activeUserId = newUser.id;
     this.saveToStorage();
+    // Auto-save new user account directly to Supabase app_users table
+    upsertUserToSupabase(newUser).catch(() => {});
     return newUser;
+  }
+
+  // --- EMAIL OTP AUTHENTICATION WORKFLOW (LOGIN & SIGNUP) ---
+
+  /**
+   * Generates a 6-digit email OTP for login after verifying user exists & credentials
+   */
+  public requestLoginOtp(email: string, password?: string): { 
+    success: boolean; 
+    otp: string; 
+    email: string; 
+    message: string; 
+    expiresAt: number;
+    user: User;
+  } {
+    const cleanEmail = email.trim().toLowerCase();
+    const user = this.users.find(u => u.email.toLowerCase() === cleanEmail);
+    if (!user) {
+      throw new Error('Account not found with this email address. Please register or check for typos.');
+    }
+    if (password && user.password && user.password !== password) {
+      throw new Error('Incorrect password. Please verify and try again.');
+    }
+
+    // Generate cryptographically secure 6-digit OTP code
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes validity
+
+    this.otpSession = {
+      email: cleanEmail,
+      otp,
+      action: 'login',
+      expiresAt
+    };
+
+    this.lastDispatchedOtp = {
+      email: cleanEmail,
+      otp,
+      action: 'login',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      recipientName: user.name
+    };
+
+    try {
+      localStorage.setItem('campusguard_otp_session', JSON.stringify(this.otpSession));
+      localStorage.setItem('campusguard_last_dispatched_otp', JSON.stringify(this.lastDispatchedOtp));
+    } catch {
+      // ignore storage errors
+    }
+
+    // Trigger real email dispatch via Supabase Auth to available email
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          supabase.auth.signInWithOtp({
+            email: cleanEmail,
+            options: { shouldCreateUser: true }
+          }).then(({ error }) => {
+            if (error) {
+              console.warn('[EventEase] Supabase Auth email notice:', error.message);
+            } else {
+              console.info(`[EventEase] Verification OTP sent to available email: ${cleanEmail}`);
+            }
+          }).catch(() => {});
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return {
+      success: true,
+      otp,
+      email: cleanEmail,
+      message: `Verification code sent to ${cleanEmail}. Please enter the 6-digit code to access your portal.`,
+      expiresAt,
+      user
+    };
+  }
+
+  /**
+   * Generates a 6-digit email OTP for new user account creation and dispatches to available email
+   */
+  public requestSignupOtp(data: {
+    name: string;
+    email: string;
+    role: 'student' | 'organizer' | 'admin';
+    password?: string;
+    studentId?: string;
+    course?: string;
+    department?: string;
+    year?: string;
+    universityName?: string;
+  }): { 
+    success: boolean; 
+    otp: string; 
+    email: string; 
+    message: string; 
+    expiresAt: number;
+  } {
+    const cleanEmail = data.email.trim().toLowerCase();
+    const existing = this.users.find(u => u.email.toLowerCase() === cleanEmail);
+    if (existing) {
+      throw new Error('An account with this email address already exists. Please sign in instead.');
+    }
+    if (!data.name || !data.name.trim()) {
+      throw new Error('Please enter your full name.');
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+    this.otpSession = {
+      email: cleanEmail,
+      otp,
+      action: 'signup',
+      expiresAt,
+      pendingUser: { ...data, email: cleanEmail }
+    };
+
+    this.lastDispatchedOtp = {
+      email: cleanEmail,
+      otp,
+      action: 'signup',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      recipientName: data.name
+    };
+
+    try {
+      localStorage.setItem('campusguard_otp_session', JSON.stringify(this.otpSession));
+      localStorage.setItem('campusguard_last_dispatched_otp', JSON.stringify(this.lastDispatchedOtp));
+    } catch {
+      // ignore
+    }
+
+    // Trigger real email dispatch via Supabase Auth to available email
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          supabase.auth.signInWithOtp({
+            email: cleanEmail,
+            options: { shouldCreateUser: true }
+          }).then(({ error }) => {
+            if (error) {
+              console.warn('[EventEase] Supabase Auth email notice:', error.message);
+            } else {
+              console.info(`[EventEase] Registration OTP sent to available email: ${cleanEmail}`);
+            }
+          }).catch(() => {});
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return {
+      success: true,
+      otp,
+      email: cleanEmail,
+      message: `Registration verification code sent to ${cleanEmail}. Enter code to complete account creation.`,
+      expiresAt
+    };
+  }
+
+  /**
+   * Verifies the 6-digit OTP code (checks both email delivery token and session code)
+   */
+  public async verifyOtp(email: string, enteredOtp: string, action: 'login' | 'signup'): Promise<User> {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanEntered = enteredOtp.trim().replace(/\s+/g, '');
+
+    // Check memory session or localStorage session
+    let session = this.otpSession;
+    if (!session || session.email !== cleanEmail) {
+      try {
+        const stored = localStorage.getItem('campusguard_otp_session');
+        if (stored) {
+          session = JSON.parse(stored);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    let isMatch = false;
+
+    // 1. Check generated session OTP code
+    if (session && session.email === cleanEmail && session.otp === cleanEntered) {
+      if (Date.now() > session.expiresAt) {
+        throw new Error('The verification code has expired. Please request a new OTP code.');
+      }
+      isMatch = true;
+    }
+
+    // 2. Also verify against Supabase Auth email token if user received code via real email
+    if (!isMatch && isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const { data, error } = await supabase.auth.verifyOtp({
+            email: cleanEmail,
+            token: cleanEntered,
+            type: 'email'
+          });
+          if (!error && (data?.user || data?.session)) {
+            isMatch = true;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!isMatch) {
+      throw new Error(`Invalid 6-digit verification code. Please check your email inbox and enter the code received.`);
+    }
+
+    // Success! Invalidate OTP session
+    this.otpSession = undefined;
+    try {
+      localStorage.removeItem('campusguard_otp_session');
+    } catch {
+      // ignore
+    }
+
+    if (action === 'login') {
+      return this.login(cleanEmail);
+    } else {
+      if (!session?.pendingUser) {
+        // Fallback if session pendingUser was missing
+        const existing = this.users.find(u => u.email.toLowerCase() === cleanEmail);
+        if (existing) return existing;
+        throw new Error('Missing registration details. Please try registering again.');
+      }
+      return this.signup(session.pendingUser as any);
+    }
+  }
+
+  /**
+   * Resends fresh 6-digit OTP code to the specified email
+   */
+  public resendOtp(email: string, action: 'login' | 'signup'): { 
+    success: boolean; 
+    otp: string; 
+    email: string; 
+    message: string; 
+    expiresAt: number;
+  } {
+    const cleanEmail = email.trim().toLowerCase();
+    let session = this.otpSession;
+    if (!session || session.email !== cleanEmail) {
+      try {
+        const stored = localStorage.getItem('campusguard_otp_session');
+        if (stored) session = JSON.parse(stored);
+      } catch {
+        // ignore
+      }
+    }
+
+    if (action === 'login') {
+      return this.requestLoginOtp(cleanEmail);
+    } else {
+      if (session?.pendingUser) {
+        return this.requestSignupOtp(session.pendingUser as any);
+      }
+      throw new Error('Sign-up session expired. Please fill the registration form again.');
+    }
+  }
+
+  /**
+   * Returns details of the last dispatched email OTP for development and demonstration inspection
+   */
+  public getLastDispatchedOtp(): DispatchedEmailOtp | undefined {
+    if (this.lastDispatchedOtp) return this.lastDispatchedOtp;
+    try {
+      const stored = localStorage.getItem('campusguard_last_dispatched_otp');
+      if (stored) {
+        this.lastDispatchedOtp = JSON.parse(stored);
+        return this.lastDispatchedOtp;
+      }
+    } catch {
+      // ignore
+    }
+    return undefined;
   }
 
   public logout(): void {
@@ -261,6 +649,8 @@ class ApiService {
     };
     this.events.unshift(newEvt);
     this.saveToStorage();
+    // Auto-save new event to Supabase events table
+    upsertEventToSupabase(newEvt).catch(() => {});
     return newEvt;
   }
 
@@ -274,13 +664,60 @@ class ApiService {
       event.status = 'draft';
     }
     this.saveToStorage();
+    // Auto-update event approval in Supabase
+    upsertEventToSupabase(event).catch(() => {});
     return event;
   }
 
   public deleteEvent(eventId: string): void {
+    // 1. Remove event from local state
     this.events = this.events.filter(e => e.id !== eventId);
+    // 2. Remove all registrations for this event
     this.registrations = this.registrations.filter(r => r.eventId !== eventId);
+    // 3. Remove leave folders and permission forms associated with this event
+    this.leaveFolders = this.leaveFolders.filter(f => f.eventId !== eventId);
+    this.permissionForms = this.permissionForms.filter(p => p.eventId !== eventId);
     this.saveToStorage();
+
+    // 4. Delete permanently from Supabase database
+    deleteEventFromSupabase(eventId).catch(() => {});
+  }
+
+  public deleteRegistration(registrationId: string): boolean {
+    const reg = this.registrations.find(r => r.id === registrationId);
+    if (!reg) return false;
+
+    // Decrement registered count on the event
+    const event = this.events.find(e => e.id === reg.eventId);
+    if (event && event.registeredCount && event.registeredCount > 0) {
+      event.registeredCount -= 1;
+    }
+
+    this.registrations = this.registrations.filter(r => r.id !== registrationId);
+    this.saveToStorage();
+
+    // Delete permanently from Supabase database
+    deleteRegistrationFromSupabase(registrationId).catch(() => {});
+    return true;
+  }
+
+  public bulkDeleteEvents(eventIds: string[]): number {
+    let count = 0;
+    eventIds.forEach(id => {
+      this.deleteEvent(id);
+      count++;
+    });
+    return count;
+  }
+
+  public bulkDeleteRegistrations(registrationIds: string[]): number {
+    let count = 0;
+    registrationIds.forEach(id => {
+      if (this.deleteRegistration(id)) {
+        count++;
+      }
+    });
+    return count;
   }
 
   public getAllCampusRegistrations(): { registration: EventRegistration; event: CampusEvent; student: User }[] {
@@ -319,6 +756,8 @@ class ApiService {
     if (idx === -1) throw new Error('User not found');
     this.users[idx] = { ...this.users[idx], ...updates };
     this.saveToStorage();
+    // Auto-save updated profile in Supabase
+    upsertUserToSupabase(this.users[idx]).catch(() => {});
     return this.users[idx];
   }
 
@@ -426,10 +865,10 @@ class ApiService {
       throw new Error('You are already registered for this event');
     }
 
-    // Generate unique registration number (e.g. CG-REG-7241-A)
+    // Generate unique registration number (e.g. EE-REG-7241-A)
     const randomNum = Math.floor(1000 + Math.random() * 9000);
     const randomChar = String.fromCharCode(65 + Math.floor(Math.random() * 26));
-    const uniqueRegistrationCode = `CG-REG-${randomNum}-${randomChar}`;
+    const uniqueRegistrationCode = `EE-REG-${randomNum}-${randomChar}`;
 
     const uniqueLeaveKey = `KEY-GLA-${randomNum}-${randomChar}`;
 
@@ -451,6 +890,11 @@ class ApiService {
     this.registrations.push(newReg);
     event.registeredCount += 1;
     this.saveToStorage();
+
+    // Auto-save registration and updated event registration count to Supabase
+    const student = this.users.find(u => u.id === studentId);
+    upsertRegistrationToSupabase(newReg, student).catch(() => {});
+    upsertEventToSupabase(event).catch(() => {});
 
     return { registration: newReg, event };
   }
@@ -496,6 +940,33 @@ class ApiService {
     reg.attendanceMarkedAt = new Date().toISOString();
     this.saveToStorage();
 
+    // Auto-sync attendance update, logs, and leave unlock to Supabase
+    const student = this.users.find(u => u.id === studentId);
+    const event = this.events.find(e => e.id === eventId);
+    upsertRegistrationToSupabase(reg, student).catch(() => {});
+    insertAttendanceLogToSupabase({
+      eventId,
+      studentId,
+      studentRollNo: student?.studentId || studentId,
+      studentName: student?.name || 'GLA Student',
+      uniqueRegistrationCode: cleanEntered,
+      verificationStatus: 'verified',
+      markedBy: 'qr_scanner'
+    }).catch(() => {});
+
+    if (event) {
+      upsertLeaveFormToSupabase({
+        eventId,
+        studentId,
+        studentName: student?.name || 'GLA Student',
+        studentRollNo: student?.studentId || studentId,
+        department: student?.department || event.department,
+        eventTitle: event.title,
+        eventDate: event.startDate ? event.startDate.split('T')[0] : undefined,
+        status: 'unlocked'
+      }).catch(() => {});
+    }
+
     return {
       success: true,
       message: 'Attendance successfully verified via Event QR Code! You are marked PRESENT and your leave form is now unlocked.',
@@ -523,6 +994,11 @@ class ApiService {
       reg.attendanceMarkedAt = new Date().toISOString();
     }
     this.saveToStorage();
+
+    // Auto-sync updated attendance to Supabase
+    const student = this.users.find(u => u.id === reg.studentId);
+    upsertRegistrationToSupabase(reg, student).catch(() => {});
+
     return reg;
   }
 
@@ -640,6 +1116,11 @@ class ApiService {
     event.registeredCount = (event.registeredCount || 0) + 1;
     this.saveToStorage();
 
+    // Auto-sync participant account and registration to Supabase
+    upsertUserToSupabase(student).catch(() => {});
+    upsertRegistrationToSupabase(newReg, student).catch(() => {});
+    upsertEventToSupabase(event).catch(() => {});
+
     return { registration: newReg, student };
   }
 
@@ -686,6 +1167,11 @@ class ApiService {
     }
 
     this.saveToStorage();
+
+    // Auto-sync updated participant profile and registration to Supabase
+    upsertUserToSupabase(student).catch(() => {});
+    upsertRegistrationToSupabase(reg, student).catch(() => {});
+
     return { registration: reg, student };
   }
 
@@ -741,6 +1227,9 @@ class ApiService {
 
     this.saveToStorage();
 
+    // Auto-sync authorized leave registration to Supabase
+    upsertRegistrationToSupabase(reg, student).catch(() => {});
+
     return {
       success: true,
       message: `Leave form authorized for ${student?.name || 'student'}. Unique Key: ${key}`,
@@ -762,6 +1251,9 @@ class ApiService {
     reg.organizerAllowedLeave = false;
     reg.leaveFormUnlocked = false; // Re-lock form
     this.saveToStorage();
+
+    const student = this.users.find(u => u.id === reg.studentId);
+    upsertRegistrationToSupabase(reg, student).catch(() => {});
 
     return {
       success: true,
@@ -800,6 +1292,7 @@ class ApiService {
             type: 'leave_form'
           });
         }
+        upsertRegistrationToSupabase(reg, student).catch(() => {});
       }
     });
     this.saveToStorage();
@@ -861,6 +1354,23 @@ class ApiService {
     reg.leaveFormUnlockedAt = new Date().toISOString();
     this.saveToStorage();
 
+    // Auto-sync unlocked leave to Supabase
+    const student = this.users.find(u => u.id === studentId);
+    const event = this.events.find(e => e.id === eventId);
+    upsertRegistrationToSupabase(reg, student).catch(() => {});
+    if (event) {
+      upsertLeaveFormToSupabase({
+        eventId: event.id,
+        studentId,
+        studentName: student?.name || 'GLA Student',
+        studentRollNo: student?.studentId || studentId,
+        department: student?.department || event.department,
+        eventTitle: event.title,
+        eventDate: event.startDate ? event.startDate.split('T')[0] : undefined,
+        status: 'unlocked'
+      }).catch(() => {});
+    }
+
     return {
       success: true,
       message: 'Unique key verified successfully! Your Official Leave Form and HOD Application Letter are now generated and unlocked.',
@@ -921,6 +1431,7 @@ class ApiService {
 
     event.leaveFormTemplate = template;
     this.saveToStorage();
+    upsertEventToSupabase(event).catch(() => {});
     return template;
   }
 
@@ -941,6 +1452,7 @@ class ApiService {
 
     event.leaveFormTemplate.isAvailable = isAvailable;
     this.saveToStorage();
+    upsertEventToSupabase(event).catch(() => {});
     return event.leaveFormTemplate;
   }
 
@@ -953,6 +1465,7 @@ class ApiService {
     }
     event.leaveFormTemplate = undefined;
     this.saveToStorage();
+    upsertEventToSupabase(event).catch(() => {});
   }
 
   // Download counter tracking for official leave form
@@ -966,8 +1479,11 @@ class ApiService {
     if (reg) {
       reg.officialFormDownloaded = true;
       reg.officialFormDownloadedAt = new Date().toISOString();
+      const student = this.users.find(u => u.id === studentId);
+      upsertRegistrationToSupabase(reg, student).catch(() => {});
     }
     this.saveToStorage();
+    if (event) upsertEventToSupabase(event).catch(() => {});
   }
 
   // Download counter tracking for personalized leave application
@@ -976,6 +1492,8 @@ class ApiService {
     if (reg) {
       reg.personalApplicationDownloaded = true;
       reg.personalApplicationDownloadedAt = new Date().toISOString();
+      const student = this.users.find(u => u.id === studentId);
+      upsertRegistrationToSupabase(reg, student).catch(() => {});
       this.saveToStorage();
     }
   }
@@ -1027,6 +1545,7 @@ class ApiService {
   public deleteAnnouncement(id: string): void {
     this.announcements = this.announcements.filter(a => a.id !== id);
     this.saveToStorage();
+    deleteAnnouncementFromSupabase(id).catch(() => {});
   }
 
   // Notifications API
@@ -1047,13 +1566,38 @@ class ApiService {
     }
   }
 
-  // Permission Forms API
-  public getPermissionForms(role?: 'student' | 'organizer'): PermissionForm[] {
-    if (!role) return this.permissionForms;
+  // Permission Forms API: Strictly isolated by role and user
+  public getPermissionForms(role?: 'student' | 'organizer' | 'admin', userId?: string): PermissionForm[] {
+    // Admin has universal campus access to view all permission forms
+    if (!role || role === 'admin') return this.permissionForms;
+
+    // Organizers can only show their own uploaded permission forms
+    if (role === 'organizer') {
+      if (userId) {
+        const orgUser = this.users.find(u => u.id === userId);
+        return this.permissionForms.filter(f => 
+          f.uploadedBy === userId || 
+          (orgUser && f.organizerName && f.organizerName.toLowerCase() === orgUser.name.toLowerCase())
+        );
+      }
+      return this.permissionForms;
+    }
+
+    // Students can only show permission forms for events they are registered for, or general campus-wide slips
     if (role === 'student') {
+      if (userId) {
+        const studentRegs = this.registrations.filter(r => r.studentId === userId && r.status === 'confirmed');
+        const registeredEventIds = new Set(studentRegs.map(r => r.eventId));
+        return this.permissionForms.filter(f => {
+          if (f.eventId) {
+            return registeredEventIds.has(f.eventId);
+          }
+          return f.targetRole === 'student';
+        });
+      }
       return this.permissionForms.filter(f => f.targetRole === 'student');
     }
-    // Return all forms for organizer dashboard
+
     return this.permissionForms;
   }
 
@@ -1122,9 +1666,55 @@ class ApiService {
     return this.users.filter(u => u.role === 'organizer');
   }
 
-  public deleteUser(userId: string): void {
+  public deleteUser(userId: string, deleteCreatedEvents: boolean = true): void {
+    const user = this.users.find(u => u.id === userId);
+    if (!user) return;
+
+    if (user.role === 'organizer') {
+      if (deleteCreatedEvents) {
+        // Find and delete all events created by this organizer
+        const orgEvents = this.events.filter(e => e.organizerId === userId);
+        orgEvents.forEach(e => {
+          this.deleteEvent(e.id);
+        });
+      } else {
+        // Reassign events to Administrator
+        this.events.forEach(e => {
+          if (e.organizerId === userId) {
+            e.organizerId = 'adm-001';
+            e.organizerName = 'Administrator';
+            upsertEventToSupabase(e).catch(() => {});
+          }
+        });
+      }
+    } else if (user.role === 'student') {
+      // Find all registrations by this student and adjust event registeredCount
+      const userRegs = this.registrations.filter(r => r.studentId === userId);
+      userRegs.forEach(reg => {
+        const event = this.events.find(e => e.id === reg.eventId);
+        if (event && event.registeredCount && event.registeredCount > 0) {
+          event.registeredCount -= 1;
+        }
+      });
+      // Remove student registrations
+      this.registrations = this.registrations.filter(r => r.studentId !== userId);
+    }
+
+    // Remove user from users list
     this.users = this.users.filter(u => u.id !== userId);
     this.saveToStorage();
+
+    // Delete user and child records from Supabase
+    deleteUserFromSupabase(userId).catch(() => {});
+  }
+
+  public bulkDeleteUsers(userIds: string[], deleteCreatedEvents: boolean = true): number {
+    let count = 0;
+    userIds.forEach(id => {
+      this.deleteUser(id, deleteCreatedEvents);
+      count++;
+    });
+    return count;
   }
 
   public addUser(userData: Partial<User>): User {

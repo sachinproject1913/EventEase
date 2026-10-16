@@ -11,10 +11,34 @@ import { AttendanceQrScannerModal } from './components/AttendanceQrScannerModal'
 import { ProfileEditModal } from './components/ProfileEditModal';
 import { AuthView } from './components/AuthView';
 import { SupabaseDatabaseModal } from './components/SupabaseDatabaseModal';
-import { X, Database } from 'lucide-react';
+import { InteractiveCursor } from './components/InteractiveCursor';
+import { Database, MousePointer2, ArrowUpRight, X } from 'lucide-react';
+
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => apiService.getActiveUser());
+  
+  // Interactive Mouse Cursor Follower state
+  const [isCursorActive, setIsCursorActive] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('campusguard_interactive_cursor');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const handleToggleCursor = useCallback(() => {
+    setIsCursorActive(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('campusguard_interactive_cursor', String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
   
   // Registration confirmation modal state
   const [registeredItem, setRegisteredItem] = useState<{ event: CampusEvent; registration: EventRegistration } | null>(null);
@@ -42,6 +66,7 @@ export default function App() {
     setCurrentUser(user);
     handleRefreshAll();
   };
+
 
   const handleLogout = () => {
     apiService.logout();
@@ -78,23 +103,45 @@ export default function App() {
   // If not logged in, render authentication page (Login & Signup)
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col text-slate-900 selection:bg-blue-100 selection:text-blue-900">
-        <header className="bg-white border-b border-slate-200 py-4 px-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-xl font-black text-slate-900 tracking-tight">CAMPUSGUARD</span>
+      <div className="min-h-screen bg-slate-50 flex flex-col text-slate-900 selection:bg-blue-100 selection:text-blue-900 relative">
+        <InteractiveCursor enabled={isCursorActive} />
+
+        <header className="bg-white/95 backdrop-blur-md border-b border-slate-200/90 py-3.5 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-40">
+          <div className="flex items-center gap-2 group cursor-pointer" data-cursor-text="GLA Portal">
+            <span className="text-xl font-black tracking-tight bg-gradient-to-r from-blue-700 via-indigo-600 to-violet-700 bg-clip-text text-transparent flex items-center gap-1 drop-shadow-xs group-hover:brightness-110 transition-all duration-300">
+              EventEase
+              <ArrowUpRight className="w-4 h-4 text-indigo-600 opacity-60 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all duration-300" />
+            </span>
+
             <span className="text-xs font-extrabold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 border border-blue-200">GLA UNIVERSITY MATHURA</span>
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">Multi-Role Portal</span>
+            <span className="hidden sm:inline-block text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">Multi-Role Portal</span>
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={handleToggleCursor}
+              title="Toggle Interactive Mouse Arrow Cursor"
+              data-cursor-text={isCursorActive ? 'Disable FX' : 'Enable FX'}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-xl font-bold border transition-all active:scale-95 ${
+                isCursorActive 
+                  ? 'bg-blue-50 text-blue-700 border-blue-200' 
+                  : 'bg-slate-100 text-slate-500 border-slate-200'
+              }`}
+            >
+              <MousePointer2 className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Cursor FX</span>
+            </button>
+            <button
               onClick={() => setIsSupabaseOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl font-bold shadow-2xs transition-colors"
+              data-cursor-text="Connect DB"
+              className="group flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl font-bold shadow-2xs transition-all active:scale-95"
             >
               <Database className="w-3.5 h-3.5 text-emerald-600" />
               <span>Supabase DB & Schema</span>
+              <ArrowUpRight className="w-3 h-3 text-emerald-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
             </button>
             <button
               onClick={handleResetData}
+              data-cursor-text="Reset Sample"
               className="text-xs text-slate-500 hover:text-slate-800 px-2 py-1"
             >
               Reset Sample Data
@@ -116,8 +163,10 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col text-slate-900 selection:bg-blue-100 selection:text-blue-900 w-full max-w-full overflow-x-hidden">
-      
+    <div className="min-h-screen bg-slate-50 flex flex-col text-slate-900 selection:bg-blue-100 selection:text-blue-900 w-full max-w-full overflow-x-hidden relative">
+      {/* Animated Interactive Mouse Link Cursor */}
+      <InteractiveCursor enabled={isCursorActive} />
+
       {/* Top Navbar */}
       <Navbar
         currentUser={currentUser}
@@ -127,7 +176,10 @@ export default function App() {
         onLogout={handleLogout}
         onOpenSpecs={() => setIsSpecsOpen(true)}
         onOpenSupabase={() => setIsSupabaseOpen(true)}
+        isCursorActive={isCursorActive}
+        onToggleCursor={handleToggleCursor}
       />
+
 
       {/* Main View: Strictly Isolated Role-Based Panels */}
       <main className="flex-1 w-full max-w-full pb-16">

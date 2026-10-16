@@ -32,8 +32,11 @@ import {
   ShieldCheck, 
   ShieldAlert,
   Sparkles,
-  Folder
+  Folder,
+  ArrowUpRight,
+  ArrowRight
 } from 'lucide-react';
+
 
 interface Props {
   student: User;
@@ -294,10 +297,13 @@ export const StudentLeaveForms: React.FC<Props> = ({
           </div>
           <button
             onClick={onBrowseEvents}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors shadow-xs"
+            data-cursor-text="Browse Events"
+            className="group inline-flex items-center gap-1.5 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
           >
-            Browse Available Events
+            <span>Browse Available Events</span>
+            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
           </button>
+
         </div>
       ) : (
         /* Event Leave Forms List */
@@ -694,17 +700,21 @@ export const StudentLeaveForms: React.FC<Props> = ({
                         <div className="flex items-center gap-2 pt-1 border-t border-indigo-200/50">
                           <button
                             onClick={() => setPreviewModalEvent(event)}
-                            className="flex-1 py-2 px-3 bg-white hover:bg-blue-50 text-blue-700 border border-blue-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                            data-cursor-text="Preview"
+                            className="group flex-1 py-2 px-3 bg-white hover:bg-blue-50 text-blue-700 border border-blue-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-2xs hover:shadow-xs cursor-pointer"
                           >
-                            <Eye className="w-3.5 h-3.5" />
+                            <Eye className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
                             <span>Preview Letter</span>
+                            <ArrowUpRight className="w-3.5 h-3.5 text-blue-500 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
                           </button>
                           <button
                             onClick={() => handleDownloadPersonalApplication(event, registration)}
-                            className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                            data-cursor-text="Download"
+                            className="group flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs hover:shadow transition-all cursor-pointer"
                           >
-                            <Download className="w-3.5 h-3.5" />
-                            <span>Download Letter (PDF)</span>
+                            <Download className="w-3.5 h-3.5 group-hover:-translate-y-0.5 transition-transform" />
+                            <span>Download Letter</span>
+                            <ArrowRight className="w-3.5 h-3.5 text-blue-200 group-hover:text-white group-hover:translate-x-0.5 transition-transform" />
                           </button>
                         </div>
                       ) : (
@@ -713,6 +723,7 @@ export const StudentLeaveForms: React.FC<Props> = ({
                           <span>{isAllowed ? 'Paste Unique Key Above to Unlock' : 'Locked (Awaiting Organizer Allowance)'}</span>
                         </div>
                       )}
+
                     </div>
 
                   </div>

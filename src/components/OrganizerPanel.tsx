@@ -40,9 +40,13 @@ import {
   FolderPlus,
   FileUp,
   Key,
-  Unlock
+  Unlock,
+  ArrowUpRight,
+  ArrowRight
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { SpotlightCard } from './SpotlightCard';
+
 
 interface Props {
   organizer: User;
@@ -95,7 +99,7 @@ export const OrganizerPanel: React.FC<Props> = ({ organizer, onRefreshEvents, on
   // Live stats
   const stats = apiService.getOrganizerDashboardStats(organizer.id);
   const notifications = apiService.getNotifications(organizer.id, 'organizer');
-  const permissionForms = apiService.getPermissionForms('organizer');
+  const permissionForms = apiService.getPermissionForms('organizer', organizer.id);
 
   // Participant Management state
   const [participantAttendanceFilter, setParticipantAttendanceFilter] = useState<'all' | 'present' | 'pending'>('all');
@@ -808,80 +812,157 @@ export const OrganizerPanel: React.FC<Props> = ({ organizer, onRefreshEvents, on
         ))}
       </div>
 
+      {/* Role-Scoped Data Isolation Notice */}
+      <div className="bg-purple-50/70 border border-purple-200/80 rounded-2xl p-3.5 flex items-center justify-between gap-3 text-xs text-purple-900 shadow-2xs">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+            <Building className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="font-extrabold text-purple-950 block">
+              Organizer Scope: {organizer.department || organizer.name}
+            </span>
+            <span className="text-[11px] text-purple-700">
+              You are viewing data strictly for your events and attendees. Other clubs' private records remain restricted.
+            </span>
+          </div>
+        </div>
+        <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-white text-purple-800 border border-purple-200 shadow-2xs">
+          <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
+          <span>Role Isolated</span>
+        </span>
+      </div>
+
       {/* 1. DASHBOARD: My events, Total Participants, Pending Tasks, Notifications */}
       {activeSubNav === 'dashboard' && (
         <div className="space-y-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+            <SpotlightCard 
+              onClick={() => setActiveSubNav('manage-events')}
+              cursorText="My Events"
+              showHoverArrow={true}
+              spotlightColor="rgba(168, 85, 247, 0.15)"
+              className="p-5 flex flex-col justify-between space-y-1 cursor-pointer card-interactive hover:border-purple-300"
+            >
               <div className="flex items-center justify-between text-slate-500">
                 <span className="text-xs font-bold uppercase tracking-wider">My Events</span>
-                <Calendar className="w-4 h-4 text-purple-600" />
+                <Calendar className="w-4 h-4 text-purple-600 group-hover:scale-110 transition-transform" />
               </div>
               <span className="text-3xl font-extrabold text-slate-900">{stats.myEventsCount}</span>
-              <p className="text-[11px] text-slate-500">Organized by {organizer.name}</p>
-            </div>
+              <p className="text-[11px] text-slate-500 flex items-center gap-1">
+                <span>Organized by {organizer.name}</span>
+                <ArrowUpRight className="w-3 h-3 text-purple-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+              </p>
+            </SpotlightCard>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+            <SpotlightCard 
+              onClick={() => setActiveSubNav('participants')}
+              cursorText="Roster"
+              showHoverArrow={true}
+              spotlightColor="rgba(59, 130, 246, 0.15)"
+              className="p-5 flex flex-col justify-between space-y-1 cursor-pointer card-interactive hover:border-blue-300"
+            >
               <div className="flex items-center justify-between text-slate-500">
                 <span className="text-xs font-bold uppercase tracking-wider">Total Participants</span>
-                <Users className="w-4 h-4 text-blue-600" />
+                <Users className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
               </div>
               <span className="text-3xl font-extrabold text-blue-600">{stats.totalParticipants}</span>
-              <p className="text-[11px] text-emerald-700 font-semibold">{stats.verifiedAttendance} Verified Present</p>
-            </div>
+              <p className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
+                <span>{stats.verifiedAttendance} Verified Present</span>
+                <ArrowUpRight className="w-3 h-3 text-emerald-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+              </p>
+            </SpotlightCard>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+            <SpotlightCard 
+              onClick={() => setActiveSubNav('leave-forms')}
+              cursorText="Tasks"
+              showHoverArrow={true}
+              spotlightColor="rgba(245, 158, 11, 0.15)"
+              className="p-5 flex flex-col justify-between space-y-1 cursor-pointer card-interactive hover:border-amber-300"
+            >
               <div className="flex items-center justify-between text-slate-500">
                 <span className="text-xs font-bold uppercase tracking-wider">Pending Tasks</span>
-                <Clock className="w-4 h-4 text-amber-600" />
+                <Clock className="w-4 h-4 text-amber-600 group-hover:scale-110 transition-transform" />
               </div>
               <span className="text-3xl font-extrabold text-amber-600">{stats.pendingTasks}</span>
-              <p className="text-[11px] text-slate-500">Templates pending upload</p>
-            </div>
+              <p className="text-[11px] text-slate-500 flex items-center gap-1">
+                <span>Templates pending upload</span>
+                <ArrowUpRight className="w-3 h-3 text-amber-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+              </p>
+            </SpotlightCard>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+            <SpotlightCard 
+              onClick={() => setActiveSubNav('notifications')}
+              cursorText="Alerts"
+              showHoverArrow={true}
+              spotlightColor="rgba(244, 63, 94, 0.15)"
+              className="p-5 flex flex-col justify-between space-y-1 cursor-pointer card-interactive hover:border-rose-300"
+            >
               <div className="flex items-center justify-between text-slate-500">
                 <span className="text-xs font-bold uppercase tracking-wider">Notifications</span>
-                <Bell className="w-4 h-4 text-rose-600" />
+                <Bell className="w-4 h-4 text-rose-600 group-hover:scale-110 transition-transform" />
               </div>
               <span className="text-3xl font-extrabold text-slate-900">{stats.notificationsCount}</span>
-              <p className="text-[11px] text-slate-500">Unread updates</p>
-            </div>
+              <p className="text-[11px] text-slate-500 flex items-center gap-1">
+                <span>Unread updates</span>
+                <ArrowUpRight className="w-3 h-3 text-rose-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+              </p>
+            </SpotlightCard>
           </div>
 
           {/* Quick Actions */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-3">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Upload className="w-5 h-5 text-purple-600" />
-                <span>Upload Leave Form Template</span>
-              </h3>
-              <p className="text-xs text-slate-600">
-                Provide the official PDF attendance exemption form for your upcoming events.
-              </p>
-              <button
-                onClick={() => setActiveSubNav('leave-forms')}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-colors"
-              >
-                Manage Leave Forms
-              </button>
-            </div>
+            <SpotlightCard 
+              cursorText="Leave Forms"
+              spotlightColor="rgba(168, 85, 247, 0.12)"
+              className="p-6 space-y-3 card-interactive hover:border-purple-300 flex flex-col justify-between"
+            >
+              <div className="space-y-2">
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Upload className="w-5 h-5 text-purple-600" />
+                  <span>Upload Leave Form Template</span>
+                </h3>
+                <p className="text-xs text-slate-600">
+                  Provide the official PDF attendance exemption form for your upcoming events.
+                </p>
+              </div>
+              <div>
+                <button
+                  onClick={() => setActiveSubNav('leave-forms')}
+                  data-cursor-text="Manage Forms"
+                  className="group px-4 py-2.5 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5"
+                >
+                  <span>Manage Leave Forms</span>
+                  <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                </button>
+              </div>
+            </SpotlightCard>
 
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-3">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <QrCode className="w-5 h-5 text-emerald-600" />
-                <span>Display Venue Check-in QR</span>
-              </h3>
-              <p className="text-xs text-slate-600">
-                Project or print the event attendance QR code so registered students can check in as PRESENT.
-              </p>
-              <button
-                onClick={() => setActiveSubNav('participants')}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors"
-              >
-                Open Participant Roster & QR
-              </button>
-            </div>
+            <SpotlightCard 
+              cursorText="QR Check-in"
+              spotlightColor="rgba(16, 185, 129, 0.12)"
+              className="p-6 space-y-3 card-interactive hover:border-emerald-300 flex flex-col justify-between"
+            >
+              <div className="space-y-2">
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <QrCode className="w-5 h-5 text-emerald-600" />
+                  <span>Display Venue Check-in QR</span>
+                </h3>
+                <p className="text-xs text-slate-600">
+                  Project or print the event attendance QR code so registered students can check in as PRESENT.
+                </p>
+              </div>
+              <div>
+                <button
+                  onClick={() => setActiveSubNav('participants')}
+                  data-cursor-text="Participant QR"
+                  className="group px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5"
+                >
+                  <span>Open Participant Roster & QR</span>
+                  <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                </button>
+              </div>
+            </SpotlightCard>
           </div>
         </div>
       )}

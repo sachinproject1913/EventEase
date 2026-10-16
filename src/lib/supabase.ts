@@ -8,18 +8,34 @@ export interface SupabaseConfig {
   anonKey: string;
 }
 
-export function getStoredSupabaseConfig(): SupabaseConfig {
-  const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+export const DEFAULT_SUPABASE_CONFIG: SupabaseConfig = {
+  url: 'https://bzdhuperkoycgtcfzflw.supabase.co',
+  anonKey: 'sb_publishable_9nHw5T7QeJ9eRz-DllPhOw_LSmGYpLv'
+};
 
-  const localUrl = localStorage.getItem(STORAGE_KEY_URL);
-  const localKey = localStorage.getItem(STORAGE_KEY_KEY);
+export function getStoredSupabaseConfig(): SupabaseConfig {
+  const envUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+  const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
+
+  const rawLocalUrl = localStorage.getItem(STORAGE_KEY_URL);
+  const rawLocalKey = localStorage.getItem(STORAGE_KEY_KEY);
+  const localUrl = rawLocalUrl ? rawLocalUrl.trim() : '';
+  const localKey = rawLocalKey ? rawLocalKey.trim() : '';
+
+  const activeUrl = (localUrl && localUrl.startsWith('https://')) 
+    ? localUrl 
+    : (envUrl.startsWith('https://') ? envUrl : DEFAULT_SUPABASE_CONFIG.url);
+
+  const activeKey = (localKey && localKey.length > 10) 
+    ? localKey 
+    : (envKey.length > 10 ? envKey : DEFAULT_SUPABASE_CONFIG.anonKey);
 
   return {
-    url: localUrl || envUrl || '',
-    anonKey: localKey || envKey || ''
+    url: activeUrl,
+    anonKey: activeKey
   };
 }
+
 
 export function saveSupabaseConfig(url: string, anonKey: string): void {
   localStorage.setItem(STORAGE_KEY_URL, url.trim());

@@ -103,37 +103,46 @@ export const SupabaseDatabaseModal: React.FC<SupabaseDatabaseModalProps> = ({
     if (onConfigChanged) onConfigChanged();
   };
 
+  const handleLoadUserCredentials = () => {
+    const defaultUrl = 'https://bzdhuperkoycgtcfzflw.supabase.co';
+    const defaultKey = 'sb_publishable_9nHw5T7QeJ9eRz-DllPhOw_LSmGYpLv';
+    setUrl(defaultUrl);
+    setAnonKey(defaultKey);
+    saveSupabaseConfig(defaultUrl, defaultKey);
+    runTest(defaultUrl, defaultKey);
+    if (onConfigChanged) onConfigChanged();
+  };
+
   const handleSeedData = async () => {
     setIsSeeding(true);
-    setSeedStatus('Uploading events to Supabase...');
+    setSeedStatus('Connecting to Supabase and syncing all events, registrations, user accounts, and leave records...');
     try {
-      const events = apiService.getAllEventsAdmin();
-      let successCount = 0;
-      for (const event of events) {
-        const ok = await insertEventToSupabase({
-          id: event.id,
-          title: event.title,
-          description: event.description,
-          category: event.category,
-          date: event.startDate.split('T')[0],
-          time: '10:00 AM',
-          venue: event.venue,
-          durationHours: 3,
-          capacity: event.maxSeats,
-          registeredCount: event.registeredCount,
-          bannerUrl: event.bannerImage,
-          status: 'upcoming',
-          organizerId: event.organizerId,
-          organizerName: event.organizerName,
-          qrCodeSecret: event.eventSecretCode || `EVENTEASE-QR-${event.id}`,
-          leaveTemplateId: event.leaveFormTemplate?.id
-        });
-        if (ok) successCount++;
+      const res = await apiService.autoSyncToSupabase();
+      if (res && res.success) {
+        const counts = res.counts;
+        setSeedStatus(`✅ Cloud Sync Successful! Uploaded to Supabase project (bzdhuperkoycgtcfzflw): ${counts?.events ?? 0} events, ${counts?.registrations ?? 0} registrations, ${counts?.users ?? 0} user accounts, and ${counts?.announcements ?? 0} announcements.`);
+      } else {
+        setSeedStatus(res?.message || 'Sync completed. Check table status below.');
       }
-      setSeedStatus(`Successfully seeded ${successCount} event(s) to Supabase table 'events'!`);
-      runTest();
+      await runTest();
+      if (onConfigChanged) onConfigChanged();
     } catch (err: any) {
-      setSeedStatus(`Error seeding: ${err.message}`);
+      setSeedStatus(`Error during sync: ${err.message}`);
+    } finally {
+      setIsSeeding(false);
+    }
+  };
+
+  const handlePullData = async () => {
+    setIsSeeding(true);
+    setSeedStatus('Pulling remote records from Supabase cloud database...');
+    try {
+      const result = await apiService.pullFromSupabase();
+      setSeedStatus(`✅ Pulled ${result.eventsCount} event(s) and ${result.regsCount} registration(s) from Supabase! Local app state refreshed.`);
+      await runTest();
+      if (onConfigChanged) onConfigChanged();
+    } catch (err: any) {
+      setSeedStatus(`Error pulling data: ${err.message}`);
     } finally {
       setIsSeeding(false);
     }
@@ -249,7 +258,7 @@ export const SupabaseDatabaseModal: React.FC<SupabaseDatabaseModalProps> = ({
                     <CheckCircle2 className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-emerald-950">How to create schema in your Supabase project:</h4>
+                    <h4 className="text-sm font-bold text-emerald-950">How to create schema in your Supabase project (bzdhuperkoycgtcfzflw):</h4>
                     <p className="text-xs text-emerald-800 mt-0.5">
                       1. Open your <strong>Supabase Dashboard</strong> &rarr; Click <strong>SQL Editor</strong> on left menu &rarr; 
                       2. Click <strong>New Query</strong> &rarr; 
@@ -258,22 +267,34 @@ export const SupabaseDatabaseModal: React.FC<SupabaseDatabaseModalProps> = ({
                   </div>
                 </div>
 
-                <button
-                  onClick={handleCopy}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs rounded-xl shadow-xs transition-all shrink-0"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="w-4 h-4" />
-                      <span>Copied to Clipboard!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" />
-                      <span>Copy Full SQL Schema</span>
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href="https://supabase.com/dashboard/project/bzdhuperkoycgtcfzflw/sql/new"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs transition-all active:scale-95"
+                  >
+                    <span>Open SQL Editor</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+
+                  <button
+                    onClick={handleCopy}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs rounded-xl shadow-xs transition-all"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4" />
+                        <span>Copy SQL Schema</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
               {/* Code Viewer */}
@@ -375,10 +396,19 @@ export const SupabaseDatabaseModal: React.FC<SupabaseDatabaseModalProps> = ({
 
                   <button
                     type="button"
-                    onClick={handleClear}
-                    className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl border border-slate-300 transition-colors"
+                    onClick={handleLoadUserCredentials}
+                    className="py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-xl border border-emerald-300 transition-colors shrink-0"
+                    title="Load user's provided Project ID (bzdhuperkoycgtcfzflw)"
                   >
-                    Reset / Clear
+                    Load bzdhuperkoycgtcfzflw
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleClear}
+                    className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl border border-slate-300 transition-colors shrink-0"
+                  >
+                    Clear
                   </button>
                 </div>
               </form>
@@ -435,43 +465,60 @@ export const SupabaseDatabaseModal: React.FC<SupabaseDatabaseModalProps> = ({
           {/* TAB 3: SEED / SYNC DATA */}
           {activeTab === 'sync' && (
             <div className="space-y-6 max-w-2xl mx-auto">
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-center space-y-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center space-y-4">
                 <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
                   <UploadCloud className="w-6 h-6" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-slate-900">Seed Local Data to Supabase</h4>
-                  <p className="text-xs text-slate-600 mt-1 max-w-md mx-auto">
-                    Push your existing GLA UNIVERSITY MATHURA events, registrations, and leave form templates from the local demo memory directly into your Supabase database.
+                  <h4 className="text-sm font-bold text-slate-900">Synchronize with Supabase Cloud Database</h4>
+                  <div className="flex items-center justify-center gap-2 mt-1">
+                    <span className="text-xs text-slate-600">Target Project ID:</span>
+                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      bzdhuperkoycgtcfzflw
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 mt-2 max-w-md mx-auto leading-relaxed">
+                    Instantly synchronize all student registrations, created events, user accounts, and leave records between this portal and your Supabase PostgreSQL cloud database.
                   </p>
                 </div>
 
-                <button
-                  onClick={handleSeedData}
-                  disabled={!configured || isSeeding}
-                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors inline-flex items-center gap-2 disabled:opacity-50"
-                >
-                  {isSeeding ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Uploading to Supabase...</span>
-                    </>
-                  ) : (
-                    <>
-                      <UploadCloud className="w-4 h-4" />
-                      <span>Push Local Events to Supabase</span>
-                    </>
-                  )}
-                </button>
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                  <button
+                    onClick={handleSeedData}
+                    disabled={!configured || isSeeding}
+                    className="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
+                  >
+                    {isSeeding ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Syncing to Supabase...</span>
+                      </>
+                    ) : (
+                      <>
+                        <UploadCloud className="w-4 h-4" />
+                        <span>Push All Data to Supabase</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={handlePullData}
+                    disabled={!configured || isSeeding}
+                    className="w-full sm:w-auto px-5 py-2.5 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Pull Remote from Supabase</span>
+                  </button>
+                </div>
 
                 {!configured && (
                   <p className="text-[11px] text-amber-600 font-medium">
-                    Please configure and test your Supabase Project URL in Tab 2 before seeding data.
+                    Please configure and test your Supabase Project URL in Tab 2 before syncing data.
                   </p>
                 )}
 
                 {seedStatus && (
-                  <div className="p-3 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-700">
+                  <div className="p-3 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-700 text-left">
                     {seedStatus}
                   </div>
                 )}
